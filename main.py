@@ -30,7 +30,7 @@ def subspace_solve(
     m = 1 << nqubits
 
     # columns of coefficient matrix V
-    v = [ np.empty(m) for _ in range(0, m+1) ]
+    V = np.empty((m,m), order="F");
 
     # subspace linear system matrix
     H = np.empty((m, m))
@@ -56,17 +56,17 @@ def subspace_solve(
         H.fill(0)
         xi.fill(0)
 
-        v[0] = r / beta
+        V[:, 0] = r / beta
         xi[0] = beta
 
         for j in range(0, m):
 
             # `w` is only an auxiliary vector
-            w = A * v[j];
+            w = A * V[:,j];
 
             for i in range(0, j+1):
-                H[i,j] = np.vecdot(w, v[i])
-                w -= H[i,j] * v[i]
+                H[i,j] = np.vecdot(w, V[:,i])
+                w -= H[i,j] * V[:,i]
             # end for [0, j]
 
             for i in range(0, j):
@@ -81,7 +81,7 @@ def subspace_solve(
                 break;
             elif j+1 < m:
                 # avoid unsafe v[j+1]
-                v[j+1] = w / nw;
+                V[:,j+1] = w / nw;
 
             if abs(H[j,j]) > abs(nw):
                 tau = nw / H[j,j]
@@ -106,7 +106,6 @@ def subspace_solve(
 
         # update solution
         y = iterativeQLS(H, xi)
-        V = np.array(v).T
         x += V * y
 
         # update residual
