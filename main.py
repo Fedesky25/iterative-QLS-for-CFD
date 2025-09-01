@@ -94,9 +94,13 @@ class IterativeQLS:
                 results: dict[str, int] = job.result().get_counts() # type: ignore
 
                 # retrieve psi via sparse tomography
+                # NOTE: psi is sparse and acceleration is achieved only if all operations involving it leverage its sparsity
                 psi = sparse_tomography(list(results.values()), list(map(lambda s: int(s,2), results.keys())))
 
-                # sandwich <psi|M|psi> with only mat*vec products
+                # sandwich <psi|M|psi> with only mat-vec products
+                # NOTE: maybe investigate what section C.2 says:
+                #     > The loss value determination is facilitated by cost evaluation circuits,
+                #     > such as the Hadamard test or the Hadamard-overlap test"
                 w = A * psi;
                 w -= r * np.vecdot(r, psi)
                 w = w * A
@@ -113,11 +117,12 @@ class IterativeQLS:
                 # update parameters
                 theta -= self.learn_rate * g
 
-            # TODO: obtain y based on principle of minimum l2 norm
-            y = psi * 1.2
+            # obtain Ly based on principle of minimum l2 norm (section C.3)
+            z = A * psi
+            Ly = np.vecdot(z, b) / np.vecdot(z, z)
 
             # update solution guess
-            x += y
+            x += psi * Ly
 
         return x
 
