@@ -4,83 +4,112 @@ from numpy.linalg import norm
 def inclusive_range(start: int, stop: int):
     return range(start, stop+1)
 
-def subspace(
+def subspace_solve(
     A: np.typing.NDArray[np.float64],
     b: np.typing.NDArray[np.float64],
-    x: np.typing.NDArray[np.float64],
-    epsilon: float,
-    nqubits: int
+    nqubits: int,
+    epsilon: float = 1e-4,
+    guess: np.typing.NDArray[np.float64] | None = None
 ):
-    assert b.ndim == x.ndim == 1, "b, x must be vectors"
+    """Solves the system Ax = b using the subspace method and iterative-QLS
+    # Arguments
+    - `A` linear system matrix
+    - `b` right hand side
+    - `nqubits` number of qubits to be used
+    - `epsilon` convergence criterion (default 1e-4)
+    - `guess` initial guess of x (default 0)
+    """
+
+    assert b.ndim == 1, "b must be a vector"
     N = b.size;
-    assert N == x.size, "b and x must have same size"
-    assert A.shape == (N, N), "shape of A must match size of b and x"
+    if guess is not None: assert guess.ndim == 1 and guess.size == N, "Initial gues must have same shape of b"
+    assert A.shape == (N, N), "A must be a matrix matching the size of b"
     assert nqubits > 1, "There must be at least 2 qubits"
+
+    # subspace dimension
     m = 1 << nqubits
 
+    # columns of coefficient matrix V
     v = [ np.empty(m) for _ in range(0, m+1) ]
-    w = [ np.empty(m) for _ in range(0, m) ]
+
+    # subspace linear system matrix
     H = np.empty((m, m))
 
-    angles = np.random.uniform(0, 2*np.pi, m)
-    c = np.cos(angles)
-    s = np.sin(angles)
+    # RHS of subspace problem
+    xi = np.empty(m)
 
+    # cos & sin vectors do not need initialization
+    # they are computed in each loop iteration for
+    # the successive one
+    c = np.empty(m)
+    s = np.empty(m)
+
+    # initialize residual
+    x = np.zeros(N) if guess is None else guess
     r = b - A*x;
     beta = norm(r)
+
     while beta > epsilon:
+
+        # resets subspace linear system
+        # TODO: check correctness
+        H.fill(0)
+        xi.fill(0)
+
         v[0] = r / beta
-        xi = np.zeros(m+1)
         xi[0] = beta
 
         for j in range(0, m):
-            w[j] = A * v[j];
+
+            # `w` is only an auxiliary vector
+            w = A * v[j];
 
             for i in range(0, j+1):
-                H[i,j] = np.vecdot(w[j], v[i])
-                w[j] -= H[i,j] * v[i]
+                H[i,j] = np.vecdot(w, v[i])
+                w -= H[i,j] * v[i]
             # end for [0, j]
-
-            H[j+1, j] = norm(w[j])
 
             for i in range(0, j):
                 H[i,   j] =  c[i]*H[i, j] + s[i]*H[i,   j]
                 H[i+1, j] = -s[i]*H[i, j] + c[i]*H[i+1, j]
             # end for [0, j)
 
-            if H[j+1, j] == 0:
-                m = j
-                # TODO: resize H
+            # avoid using H[j+1,j] as it is out-of-bounds
+            nw = norm(w)
+            if nw == 0:
+                m = j+1
                 break;
+            elif j+1 < m:
+                # avoid unsafe v[j+1]
+                v[j+1] = w / nw;
 
-            v[j+1] = w[j] / H[j+1, j];
-
-            if abs(H[j,j]) > abs(H[j+1,j]):
-                tau = H[j+1,j] / H[j,j]
+            if abs(H[j,j]) > abs(nw):
+                tau = nw / H[j,j]
                 c[j] = 1 / np.sqrt(1 + tau^2)
                 s[j] = c[j] * tau
             else:
-                tau = H[j,j] / H[j+1,j]
+                tau = H[j,j] / nw
                 s[j] = 1 / np.sqrt(1 + tau^2)
                 c[j] = s[j] * tau
             # end if
 
-            H[j,j] = c[j] * H[j,j] + s[j]*H[j+1, j]
-            H[j+1, j] = 0
+            H[j,j] = c[j] * H[j,j] + s[j]*nw
 
+            # avoid unsafe write in xi[j+1]
             xi[j]   =  c[j]*xi[j]
-            xi[j+1] = -s[j]*xi[j]
-
-            if abs(xi[j+1]) < beta*epsilon:
-                m = j
-                # TODO: resize H
+            next_xi = -s[j]*xi[j]
+            if j+1 < m: xi[j+1] = next_xi
+            if abs(next_xi) < beta*epsilon:
+                m = j + 1
                 break
         # end for [0, m)
 
+        # update solution
         y = iterativeQLS(H, xi)
-
         V = np.array(v).T
         x += V * y
+
+        # update residual
         r = b - A * x
         beta = norm(r)
     pass
