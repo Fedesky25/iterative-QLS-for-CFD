@@ -111,7 +111,9 @@ def subspace_solve(
         # update residual
         r = b - A * x
         beta = norm(r)
-    pass
+    # end while
+    return x
+
 
 def iterativeQLS(
     A: np.typing.NDArray[np.float64],
