@@ -352,11 +352,11 @@ def subspace_solve(
 
             if abs(H[j, j]) > abs(nw):
                 tau = nw / H[j, j]
-                c[j] = 1 / np.sqrt(1 + tau ^ 2)
+                c[j] = 1 / np.sqrt(1 + tau ** 2)
                 s[j] = c[j] * tau
             else:
                 tau = H[j, j] / nw
-                s[j] = 1 / np.sqrt(1 + tau ^ 2)
+                s[j] = 1 / np.sqrt(1 + tau ** 2)
                 c[j] = s[j] * tau
             # end if
 
