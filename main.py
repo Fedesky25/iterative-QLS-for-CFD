@@ -113,8 +113,7 @@ class IterativeQLS:
         - `guess` initial guess for x (default is 0)
         """
         N = b.size
-        assert (1 << self.nqubits) == N and A.shape == (
-            N, N), f"size must be {(1 << self.nqubits)}"
+        assert (1 << self.nqubits) == N and A.shape == (N, N), f"size must be {(1 << self.nqubits)}"
 
         # random initial Y-rotation angles
         theta = [rnd.uniform(0, 2*np.pi) for _ in range(len(self.theta))]
