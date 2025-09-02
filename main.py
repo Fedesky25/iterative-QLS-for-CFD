@@ -87,11 +87,17 @@ class IterativeQLS:
         qubits = QuantumRegister(nqubits)
         bits = ClassicalRegister(nqubits)
         qc = QuantumCircuit(qubits, bits)
+
+        for i in range(nqubits):
+            qc.ry(self.theta[i], qubits[i])
+
         for l in range(nlayers):
-            qc.ry(self.theta[range(l*nqubits, (l+1)*nqubits)], qubits)
-            for i in range(0, nqubits-1):
+            for i in range(nqubits-1):
                 qc.cx(qubits[i], qubits[i+1])
-        qc.ry(self.theta[range(nlayers*nqubits, (nlayers+1)*nqubits)], qubits)
+            t_start = (l+1)*nqubits
+            for i in range(nqubits):
+                qc.ry(self.theta[t_start + i], qubits[i])
+
         self.circuit = transpile(qc, backend)
 
     def solve(
