@@ -1,4 +1,4 @@
-from qiskit import QuantumCircuit, QuantumRegister
+from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
 from qiskit.circuit import ParameterVector
 from qiskit.providers import BackendV2, JobV1
 from qiskit.compiler import transpile
@@ -7,10 +7,7 @@ from qiskit_aer import AerSimulator
 import numpy as np
 from numpy.linalg import norm
 from math import inf, ceil
-
-
-def sparse_tomography(probabilities: list[float], positions: list[int]) -> np.typing.NDArray[np.float64]:
-    return np.sqrt(probabilities)
+import random as rnd
 
 
 def compute_loss(
@@ -73,8 +70,9 @@ class IterativeQLS:
 
         self.eps_conv = eps_conv
         self.eps_loss = eps_loss
+        self.eps_tmgr = eps_tmgr
         self.learn_rate = learn_rate
-        self.sparse_tomography_shots = ceil(36 * nqubits / (eps_tmgr * eps_tmgr))
+        self.shots = ceil(36 * (nqubits - 2*np.log2(eps_tmgr)))
 
         assert nqubits > 1, "Iterative-QLS requires at least 2 qubits"
         assert nlayers > 0, "Number of layers in Iterative-QLS must be positive"
@@ -85,13 +83,13 @@ class IterativeQLS:
         self.theta = ParameterVector("theta", nqubits * (nlayers + 1))
 
         qubits = QuantumRegister(nqubits)
-        qc = QuantumCircuit(qubits)
+        bits = ClassicalRegister(nqubits)
+        qc = QuantumCircuit(qubits, bits)
         for l in range(nlayers):
             qc.ry(self.theta[range(l*nqubits, (l+1)*nqubits)], qubits)
             for i in range(0, nqubits-1):
                 qc.cx(qubits[i], qubits[i+1])
         qc.ry(self.theta[range(nlayers*nqubits, (nlayers+1)*nqubits)], qubits)
-        qc.measure_all()
         self.circuit = transpile(qc, backend)
 
 
@@ -111,7 +109,8 @@ class IterativeQLS:
         assert (1 << self.nqubits) == N and A.shape == (N, N), f"size must be {(1 << self.nqubits)}"
 
         # random initial Y-rotation angles
-        theta = np.random.uniform(0, 2*np.pi, len(self.theta))
+        theta = [ rnd.uniform(0, 2*np.pi) for _ in range(len(self.theta)) ]
+        g = [0.0] * len(self.theta)
 
         # initialize residual
         x = np.zeros(b.size) if guess is None else guess
@@ -120,26 +119,10 @@ class IterativeQLS:
         while norm(r) > self.eps_conv:
             old_loss = inf
             while True:
-                # create binded circuit
-                bc = self.circuit.assign_parameters(theta)
-
-                # run the execution job
-                job: JobV1 = self.backend.run(bc, shots=self.sparse_tomography_shots) # type: ignore
-
-                # get results of the job
-                results: dict[str, int] = job.result().get_counts() # type: ignore
-
-                # retrieve psi via sparse tomography
-                # NOTE: psi is sparse and acceleration is achieved only if all operations involving it leverage its sparsity
-                psi = sparse_tomography(list(results.values()), list(map(lambda s: int(s,2), results.keys())))
+                psi = self.sparse_tomography(theta)
 
                 # compute loss
                 loss = compute_loss(A, r, psi)
-
-                w = A * psi;
-                w -= r * np.vecdot(r, psi)
-                w = w * A
-                loss = np.vecdot(psi, w)
 
                 # stopping criterion
                 if loss <= self.eps_conv or loss > old_loss:
@@ -147,10 +130,20 @@ class IterativeQLS:
                 old_loss = loss
 
                 # TODO: obtain gradient through Hadamard test
-                g = np.random.uniform(0, 1, len(self.theta))
+                for i in range(len(theta)):
+                    theta[i] += 0.5 * np.pi
+                    psi = self.sparse_tomography(theta)
+                    L1 = compute_loss(A, r, psi)
+                    theta[i] -= np.pi
+                    psi = self.sparse_tomography(theta)
+                    L2 = compute_loss(A, r, psi)
+                    theta[i] += 0.5*np.pi
+                    # compute partial derivative
+                    g[i] = 0.5*(L1 - L2);
 
                 # update parameters
-                theta -= self.learn_rate * g
+                for i in range(len(theta)):
+                    theta[i] -= self.learn_rate * g[i]
 
             # obtain Ly based on principle of minimum l2 norm (section C.3)
             z = A * psi
@@ -160,6 +153,36 @@ class IterativeQLS:
             x += psi * Ly
 
         return x
+
+    def sparse_tomography(self, theta: list[float]):
+        # define the binded circuit
+        bc = self.circuit.assign_parameters(theta)
+
+        # Sample probability vector
+        bc.measure_all(add_bits=False)
+        # run the execution job
+        job: JobV1 = self.backend.run(bc, shots=self.shots) # type: ignore
+        # get results of the job
+        results: dict[str, int] = job.result().get_counts() # type: ignore
+        basis = list(map(lambda s: int(s,2), results.keys()))
+        probs = list(map(lambda c: c/self.shots, results.values()))
+
+        # remove the measurement steps
+        for _ in range(self.nqubits): bc.data.pop()
+
+        # this should be increased for large number of qubits
+        # in order to keep k positive
+        alpha = 6
+        # compute number of executions (equation E.3)
+        M = 2 * alpha * self.shots
+        # number of traversals
+        k = ceil(np.log(self.eps_tmgr) / (np.log(2*len(basis)) - alpha))
+
+        for _ in range(k):
+            perm = rnd.permutation(len(basis))
+
+
+        return np.array([])
 
 
 def inclusive_range(start: int, stop: int):
