@@ -12,9 +12,9 @@ import random as rnd
 
 
 def compute_loss(
-    psi: np.typing.NDArray[np.float64],
     A: np.typing.NDArray[np.float64],
     b: np.typing.NDArray[np.float64],
+    psi: np.typing.NDArray[np.float64],
 ) -> float:
     """Computes the (local) loss value
 
@@ -41,9 +41,9 @@ def compute_loss(
         use a local loss function which is the expectation value of the
         Hamiltonian HL = A'*U*(1 - sum_(j=0)^n |0><0|_j)*U'*A
     """
-    w = A @ psi                 # w0 <- A|psi>
-    w -= b * np.vecdot(b, w)     # w1 <- (1 - |b><b|)w0 = (1- |b><b|)A|psi>
-    w = w @ A                   # w2 <- w1' A = (A' w1)' = <psi|A'(1 - |b><b|)A
+    w = np.matvec(A, psi)       # w0 <- A|psi>
+    w -= b * np.vecdot(b, w)    # w1 <- (1 - |b><b|)w0 = (1- |b><b|)A|psi>
+    w = np.vecmat(w, A)         # w2 <- w1' A = (A' w1)' = <psi|A'(1 - |b><b|)A
     return np.vecdot(psi, w)
 
 
