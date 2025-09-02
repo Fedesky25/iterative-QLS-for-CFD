@@ -42,13 +42,14 @@ def compute_loss(
         Hamiltonian HL = A'*U*(1 - sum_(j=0)^n |0><0|_j)*U'*A
     """
     w = A * psi                 # w0 <- A|psi>
-    w -= b * np.vecdot(b,w)     # w1 <- (1 - |b><b|)w0 = (1- |b><b|)A|psi>
+    w -= b * np.vecdot(b, w)     # w1 <- (1 - |b><b|)w0 = (1- |b><b|)A|psi>
     w = w * A                   # w2 <- w1' A = (A' w1)' = <psi|A'(1 - |b><b|)A
     return np.vecdot(psi, w)
 
 
 class IterativeQLS:
-    def __init__(self,
+    def __init__(
+        self,
         nqubits: int,
         nlayers: int = 1,
         backend: BackendV2 = AerSimulator(),
@@ -93,7 +94,6 @@ class IterativeQLS:
         qc.ry(self.theta[range(nlayers*nqubits, (nlayers+1)*nqubits)], qubits)
         self.circuit = transpile(qc, backend)
 
-
     def solve(
         self,
         A: np.typing.NDArray[np.float64],
@@ -107,15 +107,16 @@ class IterativeQLS:
         - `guess` initial guess for x (default is 0)
         """
         N = b.size
-        assert (1 << self.nqubits) == N and A.shape == (N, N), f"size must be {(1 << self.nqubits)}"
+        assert (1 << self.nqubits) == N and A.shape == (
+            N, N), f"size must be {(1 << self.nqubits)}"
 
         # random initial Y-rotation angles
-        theta = [ rnd.uniform(0, 2*np.pi) for _ in range(len(self.theta)) ]
+        theta = [rnd.uniform(0, 2*np.pi) for _ in range(len(self.theta))]
         g = [0.0] * len(self.theta)
 
         # initialize residual
         x = np.zeros(b.size) if guess is None else guess
-        r = b - A * x;
+        r = b - A * x
 
         while norm(r) > self.eps_conv:
             old_loss = inf
@@ -127,7 +128,7 @@ class IterativeQLS:
 
                 # stopping criterion
                 if loss <= self.eps_conv or loss > old_loss:
-                    break;
+                    break
                 old_loss = loss
 
                 # TODO: obtain gradient through Hadamard test
@@ -140,7 +141,7 @@ class IterativeQLS:
                     L2 = compute_loss(A, r, psi)
                     theta[i] += 0.5*np.pi
                     # compute partial derivative
-                    g[i] = 0.5*(L1 - L2);
+                    g[i] = 0.5*(L1 - L2)
 
                 # update parameters
                 for i in range(len(theta)):
@@ -162,14 +163,15 @@ class IterativeQLS:
         # Sample probability vector
         bc.measure_all(add_bits=False)
         # run the execution job
-        job: JobV1 = self.backend.run(bc, shots=self.shots) # type: ignore
+        job: JobV1 = self.backend.run(bc, shots=self.shots)  # type: ignore
         # get results of the job
-        results: dict[str, int] = job.result().get_counts() # type: ignore
-        basis = list(map(lambda s: int(s,2), results.keys()))
+        results: dict[str, int] = job.result().get_counts()  # type: ignore
+        basis = list(map(lambda s: int(s, 2), results.keys()))
         probs = list(map(lambda c: c/self.shots, results.values()))
 
         # remove the measurement steps
-        for _ in range(self.nqubits): bc.data.pop()
+        for _ in range(self.nqubits):
+            bc.data.pop()
 
         # this should be increased for large number of qubits
         # in order to keep k positive
@@ -197,18 +199,20 @@ class IterativeQLS:
                 while diff:
                     if diff & 1:
                         bc.h(q)
-                        bc.measure(q,q)
+                        bc.measure(q, q)
                         count += 1
 
                     diff = diff >> 1
                     q += 1
 
                 # run the execution job
-                job: JobV1 = self.backend.run(bc, shots=M) # type: ignore
+                job: JobV1 = self.backend.run(bc, shots=M)  # type: ignore
                 # get results of the job
-                results: dict[str, int] = job.result().get_counts() # type: ignore
+                results: dict[str, int] = job.result(
+                ).get_counts()  # type: ignore
                 # remore inserted gates
-                for _ in range(2*count): bc.data.pop()
+                for _ in range(2*count):
+                    bc.data.pop()
 
                 sum = 0
                 for (key, value) in results.items():
@@ -257,6 +261,7 @@ class IterativeQLS:
 def inclusive_range(start: int, stop: int):
     return range(start, stop+1)
 
+
 def subspace_solve(
     A: np.typing.NDArray[np.float64],
     b: np.typing.NDArray[np.float64],
@@ -273,15 +278,16 @@ def subspace_solve(
     """
 
     assert b.ndim == 1, "b must be a vector"
-    N = b.size;
-    if guess is not None: assert guess.ndim == 1 and guess.size == N, "Initial gues must have same shape of b"
+    N = b.size
     assert A.shape == (N, N), "A must be a matrix matching the size of b"
+    if guess is not None:
+        assert guess.ndim == 1 and guess.size == N, "Initial gues must have same shape of b"
 
     # subspace dimension
     m = 1 << iqls.nqubits
 
     # columns of coefficient matrix V
-    V = np.empty((m,m), order="F");
+    V = np.empty((m, m), order="F")
 
     # subspace linear system matrix
     H = np.empty((m, m))
@@ -297,7 +303,7 @@ def subspace_solve(
 
     # initialize residual
     x = np.zeros(N) if guess is None else guess
-    r = b - A*x;
+    r = b - A*x
     beta = norm(r)
 
     while beta > iqls.eps_conv:
@@ -313,15 +319,15 @@ def subspace_solve(
         for j in range(0, m):
 
             # `w` is only an auxiliary vector
-            w = A * V[:,j];
+            w = A * V[:, j]
 
             for i in range(0, j+1):
-                H[i,j] = np.vecdot(w, V[:,i])
-                w -= H[i,j] * V[:,i]
+                H[i, j] = np.vecdot(w, V[:, i])
+                w -= H[i, j] * V[:, i]
             # end for [0, j]
 
             for i in range(0, j):
-                H[i,   j] =  c[i]*H[i, j] + s[i]*H[i,   j]
+                H[i,   j] = c[i]*H[i, j] + s[i]*H[i,   j]
                 H[i+1, j] = -s[i]*H[i, j] + c[i]*H[i+1, j]
             # end for [0, j)
 
@@ -330,27 +336,28 @@ def subspace_solve(
             nw = norm(w)
             if nw == 0:
                 m = j+1
-                break;
+                break
             elif j+1 < m:
                 # avoid unsafe v[j+1]
-                V[:,j+1] = w / nw;
+                V[:, j+1] = w / nw
 
-            if abs(H[j,j]) > abs(nw):
-                tau = nw / H[j,j]
-                c[j] = 1 / np.sqrt(1 + tau^2)
+            if abs(H[j, j]) > abs(nw):
+                tau = nw / H[j, j]
+                c[j] = 1 / np.sqrt(1 + tau ^ 2)
                 s[j] = c[j] * tau
             else:
-                tau = H[j,j] / nw
-                s[j] = 1 / np.sqrt(1 + tau^2)
+                tau = H[j, j] / nw
+                s[j] = 1 / np.sqrt(1 + tau ^ 2)
                 c[j] = s[j] * tau
             # end if
 
-            H[j,j] = c[j] * H[j,j] + s[j]*nw
+            H[j, j] = c[j] * H[j, j] + s[j]*nw
 
             # avoid unsafe write in xi[j+1]
-            xi[j]   =  c[j]*xi[j]
+            xi[j] = c[j]*xi[j]
             next_xi = -s[j]*xi[j]
-            if j+1 < m: xi[j+1] = next_xi
+            if j+1 < m:
+                xi[j+1] = next_xi
             if abs(next_xi) < beta * iqls.eps_conv:
                 m = j + 1
                 break
