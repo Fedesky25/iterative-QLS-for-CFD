@@ -233,7 +233,8 @@ def subspace_solve(
                 H[i+1, j] = -s[i]*H[i, j] + c[i]*H[i+1, j]
             # end for [0, j)
 
-            # avoid using H[j+1,j] as it is out-of-bounds
+            # avoid using H[j+1,j] as it may be out-of-bounds
+            # it is set 0 anyway at the end of the loop body
             nw = norm(w)
             if nw == 0:
                 m = j+1
