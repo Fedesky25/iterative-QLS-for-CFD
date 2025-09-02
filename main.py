@@ -4,6 +4,7 @@ from qiskit.providers import BackendV2, JobV1
 from qiskit.compiler import transpile
 from qiskit_aer import AerSimulator
 
+import networkx as nx
 import numpy as np
 from numpy.linalg import norm
 from math import inf, ceil
@@ -178,11 +179,79 @@ class IterativeQLS:
         # number of traversals
         k = ceil(np.log(self.eps_tmgr) / (np.log(2*len(basis)) - alpha))
 
+        G = nx.Graph()
+        for (i, b) in enumerate(basis):
+            G.add_node(b, sign=rnd.choice((-1, +1)), prob=probs[i])
+
+        # populate the graph edges
         for _ in range(k):
-            perm = rnd.permutation(len(basis))
+            rnd.shuffle(basis)
+            for i in range(0, len(basis)-1):
+                b1 = basis[i]
+                b2 = basis[i+1]
 
+                # put Hadamard on differing bits
+                q = 0
+                count = 0
+                diff = b1 ^ b2
+                while diff:
+                    if diff & 1:
+                        bc.h(q)
+                        bc.measure(q,q)
+                        count += 1
 
-        return np.array([])
+                    diff = diff >> 1
+                    q += 1
+
+                # run the execution job
+                job: JobV1 = self.backend.run(bc, shots=M) # type: ignore
+                # get results of the job
+                results: dict[str, int] = job.result().get_counts() # type: ignore
+                # remore inserted gates
+                for _ in range(2*count): bc.data.pop()
+
+                sum = 0
+                for (key, value) in results.items():
+                    e = int(key, 2) & diff
+                    sum += -value if e.bit_count() & 1 else value
+
+                # update graph edge
+                G.add_edge(b1, b2, weight=sum)
+
+        # find signs as if it were an Ising problem
+        changed = True
+        while changed:
+            changed = False
+
+            # Create a list of nodes to iterate over in a random order
+            rnd.shuffle(basis)
+
+            # 3. Node Traversal
+            for node in basis:
+                current_spin = G.nodes[node]['sign']
+
+                # 4. Calculate Energy Change if sign is flipped
+                # The local energy contribution is -s_i * sum(J_ij * s_j)
+                # The change in energy is E_flipped - E_current
+                # delta_E = -(-s_i * sum) - -(s_i * sum) = 2 * s_i * sum
+                local_field = 0
+                for neighbor in G.neighbors(node):
+                    weight = G.edges[node, neighbor]['weight']
+                    neighbor_sign = G.nodes[neighbor]['sign']
+                    local_field += weight * neighbor_sign
+
+                delta_energy = 2 * current_spin * local_field
+
+                # 5. Decision
+                if delta_energy < 0:
+                    G.nodes[node]['sign'] = -current_spin
+                    changed = True
+
+        result = np.zeros(1 << self.nqubits)
+        for idx in basis:
+            result[idx] = G.nodes[idx]['sign'] * np.sqrt(G.nodes[idx]['prob'])
+
+        return result
 
 
 def inclusive_range(start: int, stop: int):
