@@ -381,3 +381,34 @@ def subspace_solve(
         beta = norm(r)
     # end while
     return x
+
+
+if __name__ == "__main__":
+
+    nqubits = 4
+    N = 1 << nqubits
+
+    px = -0.1
+    mu = 1
+    rho = 1
+    dt = 0.01
+    dy = 1 / N
+
+    alpha = -mu*dt/dy**2
+    beta = -2*alpha
+    gamma = -px*dt/rho
+
+    b = np.empty(N)
+    b.fill(gamma)
+    A = np.zeros((N, N))
+    A[0, 0] = beta
+    for i in range(1, N):
+        A[i-1, i] = alpha
+        A[i, i-1] = alpha
+        A[i, i] = beta
+
+    backend = AerSimulator()
+    iqls = IterativeQLS(nqubits, backend=backend)
+    print(iqls.circuit.draw("text"))
+    solution = subspace_solve(A, b, iqls)
+    print(solution)
