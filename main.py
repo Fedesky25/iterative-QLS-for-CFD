@@ -13,6 +13,42 @@ def sparse_tomography(probabilities: list[float], positions: list[int]) -> np.ty
     return np.sqrt(probabilities)
 
 
+def compute_loss(
+    psi: np.typing.NDArray[np.float64],
+    A: np.typing.NDArray[np.float64],
+    b: np.typing.NDArray[np.float64],
+) -> float:
+    """Computes the (local) loss value
+
+    Computes, using only matrix-vector products, the expectation value <psi|M|psi> where:
+
+    .. math::
+        M = A^\\dagger \\left(1 - \\rangle b \\langle \\rangle b \\right) A
+
+    TODO: leverage sparsity of `psi`
+
+    # Arguments
+    :param psi: (sparse) wavefunction vector
+    :param A: linear system matrix
+    :param r: residual
+
+    .. note::
+        Section C.2 says that "loss value determination is facilitated by cost
+        evalutation circuits". However such circuits assume that A is given as
+        sum of unitary matrices. We only have an upper-triangular matrix, so
+        I don't know what the authors actually used to compute the loss value.
+
+        Moreover, the global loss value obtained using <psi|M|psi> scales very
+        poorly with increasing number of qubits. Therefore the paper says they
+        use a local loss function which is the expectation value of the
+        Hamiltonian HL = A'*U*(1 - sum_(j=0)^n |0><0|_j)*U'*A
+    """
+    w = A * psi                 # w0 <- A|psi>
+    w -= b * np.vecdot(b,w)     # w1 <- (1 - |b><b|)w0 = (1- |b><b|)A|psi>
+    w = w * A                   # w2 <- w1' A = (A' w1)' = <psi|A'(1 - |b><b|)A
+    return np.vecdot(psi, w)
+
+
 class IterativeQLS:
     def __init__(self,
         nqubits: int,
@@ -97,10 +133,9 @@ class IterativeQLS:
                 # NOTE: psi is sparse and acceleration is achieved only if all operations involving it leverage its sparsity
                 psi = sparse_tomography(list(results.values()), list(map(lambda s: int(s,2), results.keys())))
 
-                # sandwich <psi|M|psi> with only mat-vec products
-                # NOTE: maybe investigate what section C.2 says:
-                #     > The loss value determination is facilitated by cost evaluation circuits,
-                #     > such as the Hadamard test or the Hadamard-overlap test"
+                # compute loss
+                loss = compute_loss(A, r, psi)
+
                 w = A * psi;
                 w -= r * np.vecdot(r, psi)
                 w = w * A
