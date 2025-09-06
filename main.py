@@ -112,6 +112,7 @@ class IterativeQLS:
         - `b` right hand side
         - `guess` initial guess for x (default is 0)
         """
+        print("=== Start iterative QLS")
         N = b.size
         assert (1 << self.nqubits) == N and A.shape == (N, N), f"size must be {(1 << self.nqubits)}"
 
@@ -124,19 +125,24 @@ class IterativeQLS:
         r = b - (A @ x)
 
         while norm(r) > self.eps_conv:
+            print(f"||r||= {norm(r):.2e} > {self.eps_conv:.2e}  ==>  train QLS")
             old_loss = inf
             while True:
+                print(" - psi: ", end="", flush=False)
                 psi = self.sparse_tomography(theta)
+                print()
 
                 # compute loss
                 loss = compute_loss(A, r, psi)
 
                 # stopping criterion
-                if loss <= self.eps_conv or loss > old_loss:
+                if loss <= self.eps_loss or loss > old_loss*1.05:
+                    print("Loss", f"converged to {loss}" if loss <= self.eps_loss else f"worsened by {loss - old_loss:.2e}")
                     break
                 old_loss = loss
+                print(f" - L = {loss:.2e}\n - g: ", end="", flush=False)
 
-                # TODO: obtain gradient through Hadamard test
+                # obtain gradient through parameter-shift rule
                 for i in range(len(theta)):
                     theta[i] += 0.5 * np.pi
                     psi = self.sparse_tomography(theta)
@@ -147,6 +153,7 @@ class IterativeQLS:
                     theta[i] += 0.5*np.pi
                     # compute partial derivative
                     g[i] = 0.5*(L1 - L2)
+                print(flush=False)
 
                 # update parameters
                 for i in range(len(theta)):
@@ -154,10 +161,16 @@ class IterativeQLS:
 
             # obtain Ly based on principle of minimum l2 norm (section C.3)
             z = A @ psi
-            Ly = np.vecdot(z, b) / np.vecdot(z, z)
+            nz = norm(z)
 
-            # update solution guess
-            x += psi * Ly
+            if nz == 0:
+                print("Attention: A*psi = 0!!  Can't update solution")
+            else:
+                Ly = np.vecdot(z, b) / nz
+                # update solution and residual
+                x += psi * Ly
+                r = b - (A @ x)
+                print(f"Solution updated --- Ly = {Ly:.2e}")
 
         return x
 
@@ -185,6 +198,9 @@ class IterativeQLS:
         M = 2 * alpha * self.shots
         # number of traversals
         k = ceil(np.log(self.eps_tmgr) / (np.log(2*len(basis)) - alpha))
+
+        # print(f" - S.T. {len(basis):3} (k:{k})")
+        print(len(basis), end=" ", flush=False)
 
         G = nx.Graph()
         for (i, b) in enumerate(basis):
@@ -309,12 +325,10 @@ def subspace_solve(
     # initialize residual
     x = np.zeros(N) if guess is None else guess
     r = b - (A @ x)
-
-    print("r.shape = ", r.shape)
-
     beta = norm(r)
 
     while beta > iqls.eps_conv:
+        print(f"beta = {beta:.2e} > {iqls.eps_conv:.2e}  ==>  construct subspace")
 
         # resets subspace linear system
         # TODO: check correctness
@@ -373,7 +387,7 @@ def subspace_solve(
 
         # update solution
         y = iqls.solve(H, xi)
-        x += V * y
+        x += V @ y
 
         # update residual
         r = b - (A @ x)
