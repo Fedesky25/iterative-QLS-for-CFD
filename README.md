@@ -1,7 +1,9 @@
-# Iterative QLS for CFD
+# Quantum Singular Value Transform
 
-Python implementation of the "Iterative Quantum Linear Solver" --- proposed by [Zhao-Yun Chen _et al._](https://doi.org/10.1016/j.cma.2024.117428) --- as presentation for the 2024 course of "Quantum Computing" at Politecnico di Torino.
+Python project on Quantum Singular Value Transform for the 2024 course of "Quantum Computing" at Politecnico di Torino.
 
 ## Dependecies
 - `numpy` for matrix/vector operations
-- `qiskit` for quantum circuit creation and execution
+- `qiskit` for quantum circuit creation
+- `qiskit_aer` for quantum circuit simulation
+- `pyqsp` for QSP/QSVT phase factor computation
