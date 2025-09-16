@@ -39,9 +39,11 @@ def Usin(n: int):
 
 
 def projector(qc: QuantumCircuit, phi: float):
+    qc.x(1)
     qc.cx(1,0)
     qc.rz(phi, 0)
     qc.cx(1,0)
+    qc.x(1)
 
 
 def reverse_gate(gate: Gate):
