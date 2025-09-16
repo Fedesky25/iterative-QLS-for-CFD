@@ -1,7 +1,7 @@
 from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit import Gate
+from qiskit.circuit.parameterexpression import ParameterExpression
 from qiskit.compiler import transpile
-from qiskit.visualization.timeline.interface import Target
 from qiskit_aer import AerSimulator, StatevectorSimulator
 
 from math import pi, sqrt, sin
@@ -38,12 +38,18 @@ def Usin(n: int):
     return qc.to_gate(label="$U_{sin}$")
 
 
-def projector(qc: QuantumCircuit, phi: float):
-    qc.x(1)
-    qc.cx(1,0)
-    qc.rz(phi, 0)
-    qc.cx(1,0)
-    qc.x(1)
+class PCPhase(Gate):
+    def __init__(self, phi: ParameterExpression | float, label: str | None = None) -> None:
+        super().__init__("$\\Pi$", 2, [phi], label)
+
+    def _define(self):
+        qc = QuantumCircuit(2, name=self.name)
+        qc.x(0)
+        qc.cx(0, 1)
+        qc.rz(self.params[0], 1)
+        qc.cx(0, 1)
+        qc.x(0)
+        self.definition = qc
 
 
 def reverse_gate(gate: Gate):
