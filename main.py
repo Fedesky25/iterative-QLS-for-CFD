@@ -54,7 +54,7 @@ class PCPhase(Gate):
 
 def reverse_gate(gate: Gate):
     res: Gate = gate.inverse(False) # type: ignore
-    res.name = gate.name + "$^†$"
+    res.name = gate.label + "$^†$"
     return res
 
 
