@@ -131,7 +131,11 @@ class AsinTaylor:
         return result
 
 
-def get_phi(poly: Polynomial, maxAsinDegree=3, asinEpsilon: float|None = None):
+def get_phi(
+    poly: Polynomial,
+    maxAsinDegree=3,
+    asinEpsilon: float|None = None
+) -> np.typing.NDArray[np.float64]:
     cheb_coef = poly2cheb(poly.coef)
     parity = (len(poly.coef) & 1) ^ 1
     print("Monomial coefficients: ", poly.coef)
@@ -146,7 +150,14 @@ def get_phi(poly: Polynomial, maxAsinDegree=3, asinEpsilon: float|None = None):
     print("Full phases: ", info.full_phases)
     print("Residual error: ", error)
     print("Total iterations: ", iterations)
-    return info.full_phases
+    return info.full_phases # type: ignore
+
+
+def convert_phi(phi: np.typing.NDArray[np.float64]):
+    result = phi - pi/2
+    result[0] += pi/4
+    result[-1] += pi/4
+    return result
 
 
 def test_sin():
