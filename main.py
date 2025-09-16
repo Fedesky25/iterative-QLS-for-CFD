@@ -1,13 +1,16 @@
 from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit import Gate
 from qiskit.compiler import transpile
+from qiskit.visualization.timeline.interface import Target
 from qiskit_aer import AerSimulator, StatevectorSimulator
 
-from math import pi, sqrt
+from math import pi, sqrt, sin
+
+import matplotlib.pyplot as plt
 
 from numpy.polynomial.polynomial import Polynomial
 from numpy.polynomial.chebyshev import Chebyshev, poly2cheb
-from numpy import real
+import numpy as np
 
 from pyqsp.angle_sequence import QuantumSignalProcessingPhases as QSP_phases
 from pyqsp.sym_qsp_opt import newton_solver
@@ -79,14 +82,57 @@ def main():
     print(results)
 
 
-def get_phi(coefficients):
-    taylor_asin = Polynomial([0, 1, 0, 1/6, 0, 3/40, 0, 5/112])
-    target = Polynomial([0])
-    for (i, c) in enumerate(coefficients):
-        target += c * (taylor_asin**i)
-    cheb_coef = poly2cheb(target.coef)
-    parity = (len(target.coef) & 1) ^ 1
-    print("Monomial coefficients: ", target.coef)
+class AsinTaylor:
+    COEFFICIENTS = [1, 1/6, 3/40, 5/112, 35/1125, 63/2816, 231/13312, 143/10240]
+
+    def __init__(self, degree = 3, epsilon: float|None = None):
+        max_n = min(
+            len(AsinTaylor.COEFFICIENTS),
+            (degree + 1) >> 1
+        )
+        if epsilon is None:
+            self.n = max_n
+        else:
+            self.n = 1
+            x = sin(1)
+            r = 1 - x
+            while r > epsilon and self.n < max_n:
+                self.max_y += AsinTaylor.COEFFICIENTS[self.n] * x**(1 + (self.n << 1))
+                self.n += 1
+        coefs = np.zeros(2 * self.n)
+        coefs[1::2] = AsinTaylor.COEFFICIENTS[0:self.n]
+        self.poly = Polynomial(coefs)
+        self.max_y = sum(coefs)
+
+    def degree(self):
+        return 2*self.n - 1
+
+    def scale_factor(self, poly: Polynomial):
+        x = np.linspace(-self.max_y, self.max_y, 101)
+        y = np.abs(poly(x))
+        i = np.argmax(y)
+        if i == 0 or i == 100:
+            if y[i] > 1:
+                return 1/y[i]
+        else:
+            xf = np.linspace(x[i-1], x[i+1], 101)
+            yf = np.abs(poly(xf))
+            j = np.argmax(yf)
+            if yf[j] > 0.99:
+                return 0.9999 / yf[j]
+        return 1
+
+    def compose_poly(self, poly: Polynomial):
+        result = Polynomial([0])
+        for (n, c) in enumerate(poly.coef):
+            result += c * (self.poly**n)
+        return result
+
+
+def get_phi(poly: Polynomial, maxAsinDegree=3, asinEpsilon: float|None = None):
+    cheb_coef = poly2cheb(poly.coef)
+    parity = (len(poly.coef) & 1) ^ 1
+    print("Monomial coefficients: ", poly.coef)
     print("Chebyshev coefficients: ", cheb_coef)
     print("Parity: ", parity)
 
@@ -116,13 +162,30 @@ def test_sin():
     N = 1 << n
     alpha = sqrt(N)
     vals = [ v * alpha for (i, v) in enumerate(state) if not bool(i & 1) ]
-    print("\n".join([f"{i:05b}: {real(v):.4f}" for i,v in enumerate(vals)]))
+    print("\n".join([f"{i:05b}: {np.real(v):.4f}" for i,v in enumerate(vals)]))
 
 
 
 if __name__ == "__main__":
-    # get_phi([0, 0.5])
-    test_sin()
+    asin = AsinTaylor(5)
+    print("max(asin_approx) =", asin.max_y, "<", pi/2)
+    f = Polynomial([-1, 0, 2])
+    alpha = asin.scale_factor(f)
+    f *= alpha
+    print("Polynomial scale factor:", alpha)
+    g = asin.compose_poly(f)
+    print("Composed polynomial has degree ", g.degree())
+    get_phi(g)
+
+    x = np.linspace(0, 1, 101)
+    y = f(np.asin(x))
+    approx = g(x)
+
+    plt.plot(x, y)
+    plt.plot(x, approx)
+    plt.axvline(sin(1))
+    plt.show()
+    # test_sin()
 
 
 
