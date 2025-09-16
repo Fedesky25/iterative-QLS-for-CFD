@@ -58,38 +58,6 @@ def reverse_gate(gate: Gate):
     return res
 
 
-def main():
-    n = 3
-    # c = ClassicalRegister(n, "c")
-    x = QuantumRegister(n, "x")
-    ancillas = QuantumRegister(2, "a")
-    qc = QuantumCircuit(ancillas, x)
-
-    u = Usin(n)
-    u_dag = reverse_gate(u)
-    u_qubits = [ancillas[1], x]
-
-
-    # angles are given in reverse order w.r.t. slides
-    angles = [-pi, 0.5*pi, 0.5*pi]
-    N = len(angles)
-
-    qc.h(ancillas[0])
-    for i in range(0, N):
-        qc.append(u_dag if bool(i&1) else u, u_qubits)
-        projector(qc, angles[i])
-
-    qc.measure_all()
-    dc = qc.decompose()
-    print(dc.draw("text"))
-
-    backend = AerSimulator()
-    tc = transpile(qc, backend)
-    results: dict[str,int] = backend.run(tc, shots=1024).result().get_counts()
-
-    print(results)
-
-
 class AsinTaylor:
     COEFFICIENTS = [1, 1/6, 3/40, 5/112, 35/1125, 63/2816, 231/13312, 143/10240]
 
@@ -168,10 +136,11 @@ def convert_phi(phi: np.typing.NDArray[np.float64]):
 
 def test_sin():
     n = 5
-    q = QuantumRegister(1 + n)
-    qc = QuantumCircuit(q)
-    qc.h(list(range(1, 1+n)))
-    qc.append(Usin(n), q)
+    qubits = QuantumRegister(1 + n)
+    qc = QuantumCircuit(qubits)
+    qc.h(qubits);
+    # qc.h(list(range(1, 1+n)))
+    qc.append(Usin(n), qubits)
     # qc.measure_all()
 
     backend = StatevectorSimulator()
@@ -184,8 +153,7 @@ def test_sin():
     print("\n".join([f"{i:05b}: {np.real(v):.4f}" for i,v in enumerate(vals)]))
 
 
-
-if __name__ == "__main__":
+def main():
     asin = AsinTaylor(5)
     print("max(asin_approx) =", asin.max_y, "<", pi/2)
     f = Polynomial([-1, 0, 2])
@@ -194,17 +162,41 @@ if __name__ == "__main__":
     print("Polynomial scale factor:", alpha)
     g = asin.compose_poly(f)
     print("Composed polynomial has degree ", g.degree())
-    get_phi(g)
+    phi = get_phi(g)
+    phi = convert_phi(phi)
 
-    x = np.linspace(0, 1, 101)
-    y = f(np.asin(x))
-    approx = g(x)
 
-    plt.plot(x, y)
-    plt.plot(x, approx)
-    plt.axvline(sin(1))
-    plt.show()
-    # test_sin()
+    n = 5
+    # c = ClassicalRegister(n, "c")
+    x = QuantumRegister(n, "x")
+    ancillas = QuantumRegister(2, "a")
+    qc = QuantumCircuit(x, ancillas)
+
+    u = Usin(n)
+    u_dag = reverse_gate(u)
+    u_qubits = [ancillas[0], *x]
+
+    N = len(phi)
+    phi = np.flip(phi)
+
+    qc.h(x)
+    qc.h(ancillas[1])
+    for i in range(0, N):
+        qc.append(u_dag if bool(i&1) else u, u_qubits)
+        qc.append(PCPhase(phi[i]), ancillas)
+
+    # print(qc.decompose().draw("mpl"))
+    # plt.show()
+
+    backend = StatevectorSimulator()
+    tc = transpile(qc, backend)
+    sv: NDArray[np.float64] = backend.run(tc).result().get_statevector().data
+
+    print("\n".join([f"{i:05b}: {np.real(v):+.4f}, {np.imag(v):+.4f}" for (i, v) in enumerate(sv)]))
+
+
+if __name__ == "__main__":
+    main()
 
 
 
