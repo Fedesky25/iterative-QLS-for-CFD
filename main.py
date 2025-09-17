@@ -116,6 +116,38 @@ class NormalizedAsinTaylor:
         return result
 
 
+class AsinApprox:
+    def __init__(self, maxdegree: int = 5, sample: int = 100) -> None:
+        assert maxdegree >= 3, "Degree must be at least 3"
+        n = (maxdegree - 1) >> 1
+        self.degree = 2*n + 1
+        x = np.linspace(0, 1, sample + 1)
+        b = np.asin(x) * 2/np.pi - x
+        A = np.empty((sample + 1, n))
+        for k in range(n):
+            A[:, k] = np.power(x, 2*k + 3) - x
+
+        solution, residual, _, _ = np.linalg.lstsq(A, b)
+        self.coef = solution
+        self.residual = residual[0] / (sample - 1)
+
+        poly_coef = np.zeros(1 + self.degree)
+        poly_coef[1] = 1 - sum(self.coef)
+        for k in range(n):
+            poly_coef[2*k + 3] = self.coef[k]
+        self.poly = Polynomial(poly_coef)
+
+    def __call__(self, x):
+        return self.poly(x)
+
+    def compose_poly(self, poly: Polynomial):
+        result = Polynomial([0])
+        for (n, c) in enumerate(poly.coef):
+            result += c * (self.poly**n)
+        return result
+
+
+
 def get_phi(
     poly: Polynomial,
     maxAsinDegree=3,
