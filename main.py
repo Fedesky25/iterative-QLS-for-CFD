@@ -1,6 +1,5 @@
 from qiskit import QuantumCircuit, QuantumRegister
-from qiskit.circuit import Gate
-from qiskit.circuit.parameterexpression import ParameterExpression
+from qiskit.circuit import Gate, ParameterExpression
 from qiskit.compiler import transpile
 from qiskit_aer import AerSimulator, StatevectorSimulator
 
