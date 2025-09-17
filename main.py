@@ -17,22 +17,22 @@ from pyqsp.angle_sequence import QuantumSignalProcessingPhases as QSP_phases
 from pyqsp.sym_qsp_opt import newton_solver
 
 
-def Usin(n: int):
+def Usin(n: int, alpha: float = 0.5*pi):
     qc = QuantumCircuit(1 + n)
     qc.h(0)
     theta = 0.0
     for i in range(1, n):
-        phi = 2**(i - n)
+        phi = alpha * 2**(i - n)
         theta += phi
         qc.cx(0, i)
         qc.rz(phi, i)
         qc.cx(0, i)
 
     qc.cx(0, n)
-    qc.rz(-1, n)
+    qc.rz(-alpha, n)
     qc.cx(0, n)
 
-    qc.rz(1 - theta, 0)
+    qc.rz(alpha - theta, 0)
     qc.h(0)
     qc.y(0)
 
