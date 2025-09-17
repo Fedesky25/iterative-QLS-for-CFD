@@ -1,4 +1,3 @@
-from numpy.typing import NDArray
 from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit import Gate
 from qiskit.circuit.parameterexpression import ParameterExpression
@@ -11,6 +10,7 @@ import matplotlib.pyplot as plt
 
 from numpy.polynomial.polynomial import Polynomial
 from numpy.polynomial.chebyshev import Chebyshev, poly2cheb
+from numpy.typing import NDArray
 import numpy as np
 
 from pyqsp.angle_sequence import QuantumSignalProcessingPhases as QSP_phases
