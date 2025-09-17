@@ -59,12 +59,12 @@ def reverse_gate(gate: Gate):
     return res
 
 
-class AsinTaylor:
+class NormalizedAsinTaylor:
     COEFFICIENTS = [1, 1/6, 3/40, 5/112, 35/1125, 63/2816, 231/13312, 143/10240]
 
     def __init__(self, degree = 3, epsilon: float|None = None):
         max_n = min(
-            len(AsinTaylor.COEFFICIENTS),
+            len(NormalizedAsinTaylor.COEFFICIENTS),
             (degree + 1) >> 1
         )
         if epsilon is None:
@@ -74,18 +74,28 @@ class AsinTaylor:
             x = sin(1)
             r = 1 - x
             while r > epsilon and self.n < max_n:
-                self.max_y += AsinTaylor.COEFFICIENTS[self.n] * x**(1 + (self.n << 1))
+                self.max_y += NormalizedAsinTaylor.COEFFICIENTS[self.n] * x**(1 + (self.n << 1))
                 self.n += 1
         coefs = np.zeros(2 * self.n)
-        coefs[1::2] = AsinTaylor.COEFFICIENTS[0:self.n]
-        self.poly = Polynomial(coefs)
-        self.max_y = sum(coefs)
+        coefs[1::2] = NormalizedAsinTaylor.COEFFICIENTS[0:self.n]
+        self.alpha = sum(coefs)
+        self.poly = Polynomial(coefs / self.alpha)
+
+    def __str__(self) -> str:
+        distance = self.integral() - 1 + 2/pi
+        return f"NormalizedAsinTaylor({self.alpha*200/pi:.2f}%, degree: {self.degree()}, dist: {distance:.2e})"
 
     def degree(self):
         return 2*self.n - 1
 
+    def integral(self):
+        sum = 0
+        for i in range(self.n):
+            sum += NormalizedAsinTaylor.COEFFICIENTS[i] / (2*i + 2)
+        return sum / self.alpha
+
     def scale_factor(self, poly: Polynomial):
-        x = np.linspace(-self.max_y, self.max_y, 101)
+        x = np.linspace(-1, 1, 101)
         y = np.abs(poly(x))
         i = np.argmax(y)
         if i == 0 or i == 100:
