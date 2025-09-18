@@ -152,7 +152,6 @@ class AsinApprox:
         return result
 
 
-
 def get_phi(
     poly: Polynomial,
     maxAsinDegree=3,
@@ -164,8 +163,8 @@ def get_phi(
     print("Chebyshev coefficients: ", cheb_coef)
     print("Parity: ", parity)
 
-    phi = QSP_phases(Chebyshev(cheb_coef))
-    print("Laurent phi: ", phi)
+    # phi = QSP_phases(Chebyshev(cheb_coef))
+    # print("Laurent phi: ", phi)
 
     _, error, iterations, info = newton_solver(cheb_coef[parity::2], parity=parity, maxiter=100)
     print("Reduced phases: ", info.reduced_phases)
