@@ -15,6 +15,9 @@ import numpy as np
 from pyqsp.angle_sequence import QuantumSignalProcessingPhases as QSP_phases
 from pyqsp.sym_qsp_opt import newton_solver
 
+from argparse import ArgumentParser
+from sys import argv
+
 
 def Wsin(n: int):
     """Creates a block encoding of sin(-x) in the Wz convention
@@ -240,12 +243,25 @@ def test_sin(n = 5, flip = False):
     plot_sv(sv)
 
 
-def main(n = 3, asin_degree = 3, coefficients = [0, 1]):
+def test_asin(degrees: list[int], plot: bool = False):
+    approxes = [ AsinApprox(deg) for deg in degrees ]
+    for (deg, approx) in zip(degrees, approxes):
+        print(f"{deg:2} ->", approx.coef)
+
+    if plot:
+        x = np.linspace(0, 1, 101)
+        plt.plot(x, -2/pi * np.asin(x), ls="--", c="black", label="asin")
+        for (deg, approx) in zip(degrees, approxes):
+            plt.plot(x, approx(x), label=f"d={deg}")
+        plt.legend()
+        plt.show()
+
+
+def simulate(coefficients = [0, 1], n = 5, asin_degree = 5):
     asin = AsinApprox(asin_degree)
     f = Polynomial(coefficients)
     g = asin.compose_poly(f)
-    print("Composed polynomial has degree", g.degree())
-    phi = get_phi(g)
+    phi = get_phi(g, print_info=True)
 
     x = QuantumRegister(n, "x")
     ancillas = QuantumRegister(1, "a")
@@ -266,18 +282,71 @@ def main(n = 3, asin_degree = 3, coefficients = [0, 1]):
 
     qc.rz(-2*phi[-1], ancillas)
 
-    qc.decompose().draw("mpl")
-    plt.show()
+    # qc.draw("mpl")
+    # plt.show()
 
     backend = StatevectorSimulator()
     tc = transpile(qc, backend)
     sv: NDArray[np.complex64] = backend.run(tc).result().get_statevector().data
-    plot_sv(sv)
+    return sv
+
+
+def test_poly(coefficients: list[float], n: int = 5, asin_degrees: list[int] = [5]):
+    svs = [ simulate(coefficients, n, d) for d in asin_degrees ]
+
+    fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(12, 6))
+    ax0.set_xlim(-1, 1)
+    ax0.set_ylim(-1, 1)
+    ax1.set_xlim(-1, 1)
+    ax1.set_ylim(-1, 1)
+    ax1.yaxis.tick_right()
+    for i, sv in zip(asin_degrees, svs):
+        d = 2*i + 3
+        x, psi0, psi1 = interpret_sv(sv)
+        ax0.plot(x, np.real(psi0), label=f"Re:{d}")
+        ax0.plot(x, np.imag(psi0), label=f"Im:{d}")
+        # ax0.plot(x, np.abs(psi0), ls="--", c="gray", label=f"abs:{d}")
+        ax1.plot(x, np.real(psi1), label=f"Re:{d}")
+        ax1.plot(x, np.imag(psi1), label=f"Im:{d}")
+        # ax1.plot(x, np.abs(psi1), ls="--", c="gray", label=f"abs:{d}")
+    ax0.legend()
+    ax1.legend()
+    plt.show()
 
 
 if __name__ == "__main__":
-    # test_sin()
-    main()
+    parser = ArgumentParser()
+    sub = parser.add_subparsers(dest="cmd")
+
+    # encoding of sin
+    es_parser = sub.add_parser("sin", help="tests the block encoding of sin(-x)")
+    es_parser.add_argument("-f", "--flip", action="store_true")
+    es_parser.add_argument("-n", type=int, default=5, help="Number of encoding qubits")
+
+    # approximation of asin
+    aa_parser = sub.add_parser("asin", help="computes the approximation to arcsin")
+    aa_parser.add_argument("--noplot", action="store_true", help="do not plot the result")
+    aa_parser.add_argument("degree", type=int, nargs='+', help="degree(s) of the approximating polynomial")
+
+    # encodinf of polynomial
+    ep_parser = sub.add_parser("poly", help="tests the block encoding of P(x)")
+    ep_parser.add_argument("-n", type=int, default=5, help="Number of encoding qubits")
+    ep_parser.add_argument("-d", "--asin-degree", nargs="*", default=[5], type=int, help="degree(s) of the polynomial approximating arcsin")
+    ep_parser.add_argument("-c", "--coef", nargs='+', type=float, required=True)
+
+
+    ns = parser.parse_args()
+
+    print(ns)
+
+    if ns.cmd == "sin":
+        test_sin(ns.n, ns.flip)
+    elif ns.cmd == "asin":
+        test_asin(ns.degree, not ns.noplot)
+    elif ns.cmd == "poly":
+        test_poly(ns.coef, ns.n, ns.asin_degree)
+
+
 
 
 
