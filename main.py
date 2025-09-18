@@ -16,24 +16,21 @@ from pyqsp.angle_sequence import QuantumSignalProcessingPhases as QSP_phases
 from pyqsp.sym_qsp_opt import newton_solver
 
 
-def Usin(n: int, alpha: float = 0.5*pi):
+def Wsin(n: int):
     qc = QuantumCircuit(1 + n)
     qc.h(0)
-    theta = 0.0
     for i in range(1, n):
-        phi = alpha * 2**(i - n)
-        theta += phi
+        phi = pi * 2**(i - 1 - n)
         qc.cx(0, i)
         qc.rz(phi, i)
         qc.cx(0, i)
 
     qc.cx(0, n)
-    qc.rz(-alpha, n)
+    qc.rz(-0.5*pi, n)
     qc.cx(0, n)
 
-    qc.rz(alpha - theta, 0)
+    qc.rz((2**(-n) - 1)*pi, 0)
     qc.h(0)
-    qc.y(0)
 
     return qc.to_gate(label="$U_{sin}$")
 
@@ -214,7 +211,7 @@ def main():
     ancillas = QuantumRegister(2, "a")
     qc = QuantumCircuit(x, ancillas)
 
-    u = Usin(n)
+    u = Wsin(n)
     u_dag = reverse_gate(u)
     u_qubits = [ancillas[0], *x]
 
