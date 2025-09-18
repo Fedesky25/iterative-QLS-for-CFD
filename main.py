@@ -17,6 +17,12 @@ from pyqsp.sym_qsp_opt import newton_solver
 
 
 def Wsin(n: int):
+    """Creates a block encoding of sin(-x) in the Wz convention
+
+    The resulting gate will use `n+1` qubits:
+     - One ancillary qubit at index 0
+     - `n` qubits representing the number encoded with two's complement
+    """
     qc = QuantumCircuit(1 + n)
     qc.h(0)
     for i in range(1, n):
