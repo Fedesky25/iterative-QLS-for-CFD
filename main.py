@@ -182,6 +182,42 @@ def convert_phi(phi: NDArray[np.float64]):
     return result
 
 
+def interpret_sv(sv: NDArray):
+    N = len(sv) >> 1
+    H = N >> 1
+    psi0 = np.empty(N, dtype=sv.dtype)
+    psi0[0:H] = sv[H:N]
+    psi0[H:N] = sv[0:H]
+    psi0 *= sqrt(N)
+
+    psi1 = np.empty(N, dtype=sv.dtype)
+    psi1[0:H] = sv[N+H:]
+    psi1[H:N] = sv[N:N+H]
+    psi1 *= sqrt(N)
+
+    x = np.linspace(-1, 1, N, endpoint=False)
+    return (x, psi0, psi1)
+
+
+def plot_sv(sv: NDArray):
+    x, psi0, psi1 = interpret_sv(sv)
+    fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(12, 6))
+    ax0.set_xlim(-1, 1)
+    ax0.set_ylim(-1, 1)
+    ax1.set_xlim(-1, 1)
+    ax1.set_ylim(-1, 1)
+    ax1.yaxis.tick_right()
+    ax0.plot(x, np.real(psi0), label="real")
+    ax0.plot(x, np.imag(psi0), label="imag")
+    ax0.plot(x, np.abs(psi0), ls="--", c="gray", label="abs")
+    ax0.legend()
+    ax1.plot(x, np.real(psi1), label="real")
+    ax1.plot(x, np.imag(psi1), label="imag")
+    ax1.plot(x, np.abs(psi1), ls="--", c="gray", label="abs")
+    ax1.legend()
+    plt.show()
+
+
 def test_sin():
     n = 5
     qubits = QuantumRegister(1 + n)
