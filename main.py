@@ -240,23 +240,15 @@ def test_sin(n = 5, flip = False):
     plot_sv(sv)
 
 
-def main():
-    asin = AsinTaylor(5)
-    print("max(asin_approx) =", asin.max_y, "<", pi/2)
-    f = Polynomial([-1, 0, 2])
-    alpha = asin.scale_factor(f)
-    f *= alpha
-    print("Polynomial scale factor:", alpha)
+def main(n = 3, asin_degree = 3, coefficients = [0, 1]):
+    asin = AsinApprox(asin_degree)
+    f = Polynomial(coefficients)
     g = asin.compose_poly(f)
-    print("Composed polynomial has degree ", g.degree())
+    print("Composed polynomial has degree", g.degree())
     phi = get_phi(g)
-    phi = convert_phi(phi)
 
-
-    n = 5
-    # c = ClassicalRegister(n, "c")
     x = QuantumRegister(n, "x")
-    ancillas = QuantumRegister(2, "a")
+    ancillas = QuantumRegister(1, "a")
     qc = QuantumCircuit(x, ancillas)
 
     u = Wsin(n)
@@ -267,22 +259,24 @@ def main():
     phi = np.flip(phi)
 
     qc.h(x)
-    qc.h(ancillas[1])
-    for i in range(0, N):
+    for i in range(0, N-1):
+        # qc.append(PCPhase(phi[i]), ancillas)
+        qc.rz(-2*phi[i], ancillas)
         qc.append(u_dag if bool(i&1) else u, u_qubits)
-        qc.append(PCPhase(phi[i]), ancillas)
 
-    # print(qc.decompose().draw("mpl"))
-    # plt.show()
+    qc.rz(-2*phi[-1], ancillas)
+
+    qc.decompose().draw("mpl")
+    plt.show()
 
     backend = StatevectorSimulator()
     tc = transpile(qc, backend)
-    sv: NDArray[np.float64] = backend.run(tc).result().get_statevector().data
-
-    print("\n".join([f"{i:05b}: {np.real(v):+.4f}, {np.imag(v):+.4f}" for (i, v) in enumerate(sv)]))
+    sv: NDArray[np.complex64] = backend.run(tc).result().get_statevector().data
+    plot_sv(sv)
 
 
 if __name__ == "__main__":
+    # test_sin()
     main()
 
 
