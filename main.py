@@ -112,25 +112,34 @@ class NormalizedAsinTaylor:
         return result
 
 
+def int_xcirc(n: int):
+    """Computes the integral of x^n sqrt(1 - x^2) from 0 to 1 """
+    if bool(n & 1):
+        res = 1/3
+    else:
+        res = pi/4
+    while n > 1:
+        res *= 1 - 3/(n+2)
+        n -= 2
+    return res
+
+
 class AsinApprox:
     def __init__(self, maxdegree: int = 5, sample: int = 100) -> None:
         assert maxdegree >= 3, "Degree must be at least 3"
         n = (maxdegree - 1) >> 1
         self.degree = 2*n + 1
-        x = np.linspace(0, 1, sample + 1)
-        b = np.asin(x) * 2/np.pi - x
-        A = np.empty((sample + 1, n))
-        for k in range(n):
-            A[:, k] = np.power(x, 2*k + 3) - x
-
-        solution, residual, _, _ = np.linalg.lstsq(A, b)
-        self.coef = solution
-        self.residual = residual[0] / (sample - 1)
-
+        b = np.empty(n)
+        A = np.empty((n, n))
+        for k in range(1, n+1):
+            b[k-1] = 1/12 + 1/(2*k + 2) - 1/(2*k + 3) - (2*k + 1)/(k+1) * int_xcirc(2*k) / pi
+            for l in range(1, n+1):
+                A[k-1,l-1] = 1/(2*l + 2*k + 3) - 1/(2*l + 3) - 1/(2*k + 3) + 1/3
+        self.coef = np.linalg.solve(A, b)
         poly_coef = np.zeros(1 + self.degree)
-        poly_coef[1] = 1 - sum(self.coef)
+        poly_coef[1] = sum(self.coef) - 1
         for k in range(n):
-            poly_coef[2*k + 3] = self.coef[k]
+            poly_coef[2*k + 3] = -self.coef[k]
         self.poly = Polynomial(poly_coef)
 
     def __call__(self, x):
