@@ -164,22 +164,26 @@ class AsinApprox:
 def get_phi(
     poly: Polynomial,
     maxAsinDegree=3,
-    asinEpsilon: float|None = None
+    asinEpsilon: float|None = None,
+    print_info = False
 ) -> NDArray[np.float64]:
     cheb_coef = poly2cheb(poly.coef)
     parity = (len(poly.coef) & 1) ^ 1
-    print("Monomial coefficients: ", poly.coef)
-    print("Chebyshev coefficients: ", cheb_coef)
-    print("Parity: ", parity)
+
+    if print_info:
+        print("Monomial coefficients: ", poly.coef)
+        print("Chebyshev coefficients: ", cheb_coef)
+        print("Parity: ", parity)
 
     # phi = QSP_phases(Chebyshev(cheb_coef))
     # print("Laurent phi: ", phi)
 
     _, error, iterations, info = newton_solver(cheb_coef[parity::2], parity=parity, maxiter=100)
-    print("Reduced phases: ", info.reduced_phases)
-    print("Full phases: ", info.full_phases)
-    print("Residual error: ", error)
-    print("Total iterations: ", iterations)
+    if print_info:
+        print("Reduced phases: ", info.reduced_phases)
+        print("Full phases: ", info.full_phases)
+        # print("Residual error: ", error)
+        # print("Total iterations: ", iterations)
     return info.full_phases # type: ignore
 
 
