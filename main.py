@@ -218,23 +218,21 @@ def plot_sv(sv: NDArray):
     plt.show()
 
 
-def test_sin():
-    n = 5
-    qubits = QuantumRegister(1 + n)
-    qc = QuantumCircuit(qubits)
-    qc.h(qubits);
-    # qc.h(list(range(1, 1+n)))
-    qc.append(Usin(n), qubits)
-    # qc.measure_all()
+def test_sin(n = 5, flip = False):
+    x = QuantumRegister(n, "x")
+    a = QuantumRegister(1, "a")
+    qc = QuantumCircuit(x, a)
+
+    if flip:
+        qc.x(a)
+
+    qc.h(x);
+    qc.append(Wsin(n), [a[0], *x])
 
     backend = StatevectorSimulator()
     tc = transpile(qc, backend)
-    state = backend.run(tc).result().get_statevector().data
-
-    N = 1 << n
-    alpha = sqrt(N)
-    vals = [ v * alpha for (i, v) in enumerate(state) if not bool(i & 1) ]
-    print("\n".join([f"{i:05b}: {np.real(v):.4f}" for i,v in enumerate(vals)]))
+    sv = backend.run(tc).result().get_statevector().data
+    plot_sv(sv)
 
 
 def main():
