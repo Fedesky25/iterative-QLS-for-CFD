@@ -181,21 +181,21 @@ def get_phi(poly: Polynomial, print_info = False) -> NDArray[np.float64]:
     cheb_coef = poly2cheb(poly.coef)
     parity = (len(poly.coef) & 1) ^ 1
 
-    if print_info:
-        print("Monomial coefficients: ", poly.coef)
-        print("Chebyshev coefficients: ", cheb_coef)
-        print("Parity: ", parity)
-
     # phi = QSP_phases(Chebyshev(cheb_coef))
     # print("Laurent phi: ", phi)
 
     with nostdout():
         _, error, iterations, info = newton_solver(cheb_coef[parity::2], parity=parity, maxiter=100)
+
     if print_info:
-        print("Reduced phases: ", info.reduced_phases)
-        print("Full phases: ", info.full_phases)
-        print("Residual error: ", error)
-        print("Total iterations: ", iterations)
+        print(" • Parity: ", parity)
+        print(" • Monomial: ", poly.coef)
+        print(" • Chebyshev: ", cheb_coef)
+        print(" • Red. phases: ", info.reduced_phases)
+        print(" • Full phases: ", info.full_phases)
+        print(" • Residual error: ", error)
+        print(" • Total iterations: ", iterations)
+
     return info.full_phases # type: ignore
 
 
@@ -279,11 +279,7 @@ def test_asin(degrees: list[int], plot: bool = False, plot_real: bool = False, n
     phiset = [ get_phi(a.poly) for a in approxes ]
 
     for i in range(Nd):
-        print(f"D={degrees[i]}:\n • poly: {
-            np.array2string(approxes[i].poly.coef, max_line_width=np.inf) # type: ignore
-        }\n • phi:  {
-            np.array2string(phiset[i], max_line_width=np.inf) # type: ignore
-        }")
+        print(f"D={degrees[i]}:\n • poly: {approxes[i].poly.coef}\n • phi:  {phiset[i]}")
 
     if plot:
         colors = plt.get_cmap("rainbow", Nd)
@@ -314,6 +310,8 @@ def simulate(coefficients = [0, 1], n = 5, asin_degree = 5):
     asin = AsinApprox(asin_degree)
     f = Polynomial(coefficients)
     g = asin.compose_poly(f)
+
+    print(f"[Asin degree = {asin_degree:2}]")
     phi = get_phi(g, print_info=True)
 
     x = QuantumRegister(n, "x")
@@ -400,6 +398,7 @@ if __name__ == "__main__":
 
     ns = parser.parse_args()
 
+    np.set_printoptions(linewidth=np.inf) # type: ignore
     if ns.cmd == "phi":
         get_phi(Polynomial(ns.coef), True)
     elif ns.cmd == "sin":
