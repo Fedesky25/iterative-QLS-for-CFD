@@ -16,7 +16,23 @@ from pyqsp.angle_sequence import QuantumSignalProcessingPhases as QSP_phases
 from pyqsp.sym_qsp_opt import newton_solver
 
 from argparse import ArgumentParser
-from sys import argv
+
+import contextlib
+import sys
+
+class DummyFile(object):
+    def write(self, x): pass
+
+@contextlib.contextmanager
+def nostdout():
+    """Silences the standard output of anything within it
+    https://stackoverflow.com/questions/2828953/silence-the-stdout-of-a-function-in-python-without-trashing-sys-stdout-and-resto
+    """
+    save_stdout = sys.stdout
+    sys.stdout = DummyFile()
+    yield
+    sys.stdout = save_stdout
+
 
 
 def Wsin(n: int):
@@ -161,12 +177,7 @@ class AsinApprox:
         return result
 
 
-def get_phi(
-    poly: Polynomial,
-    maxAsinDegree=3,
-    asinEpsilon: float|None = None,
-    print_info = False
-) -> NDArray[np.float64]:
+def get_phi(poly: Polynomial, print_info = False) -> NDArray[np.float64]:
     cheb_coef = poly2cheb(poly.coef)
     parity = (len(poly.coef) & 1) ^ 1
 
@@ -178,12 +189,13 @@ def get_phi(
     # phi = QSP_phases(Chebyshev(cheb_coef))
     # print("Laurent phi: ", phi)
 
-    _, error, iterations, info = newton_solver(cheb_coef[parity::2], parity=parity, maxiter=100)
+    with nostdout():
+        _, error, iterations, info = newton_solver(cheb_coef[parity::2], parity=parity, maxiter=100)
     if print_info:
         print("Reduced phases: ", info.reduced_phases)
         print("Full phases: ", info.full_phases)
-        # print("Residual error: ", error)
-        # print("Total iterations: ", iterations)
+        print("Residual error: ", error)
+        print("Total iterations: ", iterations)
     return info.full_phases # type: ignore
 
 
