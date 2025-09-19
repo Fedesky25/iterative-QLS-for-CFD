@@ -365,6 +365,10 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     sub = parser.add_subparsers(dest="cmd")
 
+    # phase factor computation
+    pf_parser = sub.add_parser("phi", help="computes the phase factors of a polynomial")
+    pf_parser.add_argument("coef", type=float, nargs="+")
+
     # encoding of sin
     es_parser = sub.add_parser("sin", help="tests the block encoding of sin(-x)")
     es_parser.add_argument("-f", "--flip", action="store_true")
@@ -384,9 +388,9 @@ if __name__ == "__main__":
 
     ns = parser.parse_args()
 
-    print(ns)
-
-    if ns.cmd == "sin":
+    if ns.cmd == "phi":
+        get_phi(Polynomial(ns.coef), True)
+    elif ns.cmd == "sin":
         test_sin(ns.n, ns.flip)
     elif ns.cmd == "asin":
         test_asin(ns.degree, not ns.noplot)
