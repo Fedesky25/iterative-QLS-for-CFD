@@ -279,7 +279,11 @@ def test_asin(degrees: list[int], plot: bool = False, plot_real: bool = False, n
     phiset = [ get_phi(a.poly) for a in approxes ]
 
     for i in range(Nd):
-        print(f"D={degrees[i]}:\n • coef: {approxes[i].coef}\n • phi: {phiset[i]}")
+        print(f"D={degrees[i]}:\n • poly: {
+            np.array2string(approxes[i].poly.coef, max_line_width=np.inf) # type: ignore
+        }\n • phi:  {
+            np.array2string(phiset[i], max_line_width=np.inf) # type: ignore
+        }")
 
     if plot:
         colors = plt.get_cmap("rainbow", Nd)
