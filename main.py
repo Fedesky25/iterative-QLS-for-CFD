@@ -323,7 +323,6 @@ def simulate(coefficients = [0, 1], n = 5, asin_degree = 5):
     qc = QuantumCircuit(x, ancillas)
 
     u = Wsin(n)
-    u_dag = reverse_gate(u)
     u_qubits = [ancillas[0], *x]
 
     N = len(phi)
@@ -333,7 +332,7 @@ def simulate(coefficients = [0, 1], n = 5, asin_degree = 5):
     for i in range(0, N-1):
         # qc.append(PCPhase(phi[i]), ancillas)
         qc.rz(-2*phi[i], ancillas)
-        qc.append(u_dag if bool(i&1) else u, u_qubits)
+        qc.append(u, u_qubits)
 
     qc.rz(-2*phi[-1], ancillas)
 
