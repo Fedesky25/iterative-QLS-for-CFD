@@ -259,16 +259,47 @@ def test_sin(n = 5, flip = False):
     plot_sv(sv)
 
 
-def test_asin(degrees: list[int], plot: bool = False):
+def sig_op(a):
+    return np.array([
+        [a, 1j * np.sqrt(1 - a**2)],
+        [1j * np.sqrt(1 - a**2), a]
+    ])
+
+
+def qsp_op(phi):
+    return np.array([
+        [np.exp(1j * phi), 0.],
+        [0., np.exp(-1j * phi)]
+    ])
+
+
+def test_asin(degrees: list[int], plot: bool = False, npt: int = 101):
+    Nd = len(degrees)
     approxes = [ AsinApprox(deg) for deg in degrees ]
-    for (deg, approx) in zip(degrees, approxes):
-        print(f"{deg:2} ->", approx.coef)
+    phiset = [ get_phi(a.poly) for a in approxes ]
+
+    for i in range(Nd):
+        print(f"D={degrees[i]}:\n • coef: {approxes[i].coef}\n • phi: {phiset[i]}")
 
     if plot:
-        x = np.linspace(0, 1, 101)
-        plt.plot(x, -2/pi * np.asin(x), ls="--", c="black", label="asin")
-        for (deg, approx) in zip(degrees, approxes):
-            plt.plot(x, approx(x), label=f"d={deg}")
+        colors = plt.cm.get_cmap("rainbow", Nd)
+        x = np.linspace(0, 1, npt)
+        plt.plot(x, -2/pi * np.asin(x), ls=":", c="black", label="asin")
+        for i in range(Nd):
+            qy = np.empty(npt)
+            S = [ qsp_op(phi) for phi in phiset[i] ]
+            for j in range(npt):
+                W = sig_op(x[j])
+                U = S[0]
+                for s in S[1:]:
+                    U = U @ W @ s
+                qy[j] = np.imag(U[0,0])
+
+            c1 = colors(Nd - 1 - i)
+            c2 = tuple(v*0.5 for v in c1)
+            plt.plot(x, approxes[i](x), label=f"P:{degrees[i]}", c=c1)
+            plt.plot(x, qy, label=f"Im(QSP):{degrees[i]}", ls="--", c=c2)
+
         plt.legend()
         plt.show()
 
