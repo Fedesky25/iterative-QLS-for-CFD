@@ -189,7 +189,7 @@ def get_phi(poly: Polynomial, print_info = False) -> NDArray[np.float64]:
     # print("Laurent phi: ", phi)
 
     with nostdout():
-        _, error, iterations, info = newton_solver(cheb_coef[parity::2], parity=parity, maxiter=100)
+        _, error, iterations, info = newton_solver(cheb_coef[parity::2], parity=parity, maxiter=10_000)
 
     if print_info:
         print(" • Parity: ", parity)
