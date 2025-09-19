@@ -36,7 +36,7 @@ def nostdout():
 
 
 def Wsin(n: int):
-    """Creates a block encoding of sin(-x) in the Wz convention
+    """Creates a block encoding of sin(-x) in the Wx convention
 
     The resulting gate will use `n+1` qubits:
      - One ancillary qubit at index 0
@@ -57,7 +57,7 @@ def Wsin(n: int):
     qc.rz((2**(-n) - 1)*pi, 0)
     qc.h(0)
 
-    return qc.to_gate(label="$U_{sin}$")
+    return qc.to_gate(label="$W_{sin}$")
 
 
 class PCPhase(Gate):
