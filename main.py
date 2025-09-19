@@ -273,7 +273,7 @@ def qsp_op(phi):
     ])
 
 
-def test_asin(degrees: list[int], plot: bool = False, npt: int = 101):
+def test_asin(degrees: list[int], plot: bool = False, plot_real: bool = False, npt: int = 101):
     Nd = len(degrees)
     approxes = [ AsinApprox(deg) for deg in degrees ]
     phiset = [ get_phi(a.poly) for a in approxes ]
@@ -282,23 +282,25 @@ def test_asin(degrees: list[int], plot: bool = False, npt: int = 101):
         print(f"D={degrees[i]}:\n • coef: {approxes[i].coef}\n • phi: {phiset[i]}")
 
     if plot:
-        colors = plt.cm.get_cmap("rainbow", Nd)
+        colors = plt.get_cmap("rainbow", Nd)
         x = np.linspace(0, 1, npt)
         plt.plot(x, -2/pi * np.asin(x), ls=":", c="black", label="asin")
         for i in range(Nd):
-            qy = np.empty(npt)
+            qy = np.empty(npt, dtype=np.complex64)
             S = [ qsp_op(phi) for phi in phiset[i] ]
             for j in range(npt):
                 W = sig_op(x[j])
                 U = S[0]
                 for s in S[1:]:
                     U = U @ W @ s
-                qy[j] = np.imag(U[0,0])
+                qy[j] = U[0,0]
 
             c1 = colors(Nd - 1 - i)
             c2 = tuple(v*0.5 for v in c1)
             plt.plot(x, approxes[i](x), label=f"P:{degrees[i]}", c=c1)
-            plt.plot(x, qy, label=f"Im(QSP):{degrees[i]}", ls="--", c=c2)
+            plt.plot(x, np.imag(qy), label=f"Im:{degrees[i]}", ls="--", c=c2)
+            if plot_real:
+                plt.plot(x, np.real(qy), label=f"Re:{degrees[i]}", ls=":", c=c2)
 
         plt.legend()
         plt.show()
@@ -377,6 +379,8 @@ if __name__ == "__main__":
     # approximation of asin
     aa_parser = sub.add_parser("asin", help="computes the approximation to arcsin")
     aa_parser.add_argument("--noplot", action="store_true", help="do not plot the result")
+    aa_parser.add_argument("-r", "--real", action="store_true", help="plot also the real part")
+    aa_parser.add_argument("-n", "--npts", type=int, default=101, help="number of sampling points")
     aa_parser.add_argument("degree", type=int, nargs='+', help="degree(s) of the approximating polynomial")
 
     # encodinf of polynomial
@@ -393,7 +397,7 @@ if __name__ == "__main__":
     elif ns.cmd == "sin":
         test_sin(ns.n, ns.flip)
     elif ns.cmd == "asin":
-        test_asin(ns.degree, not ns.noplot)
+        test_asin(ns.degree, not ns.noplot, ns.real, ns.npts)
     elif ns.cmd == "poly":
         test_poly(ns.coef, ns.n, ns.asin_degree)
 
