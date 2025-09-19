@@ -347,20 +347,24 @@ def simulate(coefficients = [0, 1], n = 5, asin_degree = 5):
 def test_poly(coefficients: list[float], n: int = 5, asin_degrees: list[int] = [5]):
     svs = [ simulate(coefficients, n, d) for d in asin_degrees ]
 
+    Nd = len(asin_degrees)
+    cm = plt.get_cmap("rainbow", Nd)
+
     fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(12, 6))
     ax0.set_xlim(-1, 1)
     ax0.set_ylim(-1, 1)
     ax1.set_xlim(-1, 1)
     ax1.set_ylim(-1, 1)
     ax1.yaxis.tick_right()
-    for i, sv in zip(asin_degrees, svs):
-        d = 2*i + 3
-        x, psi0, psi1 = interpret_sv(sv)
-        ax0.plot(x, np.real(psi0), label=f"Re:{d}")
-        ax0.plot(x, np.imag(psi0), label=f"Im:{d}")
+    for i in range(Nd):
+        clr = cm(Nd - 1 - i)
+        d = asin_degrees[i]
+        x, psi0, psi1 = interpret_sv(svs[i])
+        ax0.plot(x, np.real(psi0), label=f"Re:{d}", c=clr, ls=":")
+        ax0.plot(x, np.imag(psi0), label=f"Im:{d}", c=clr)
         # ax0.plot(x, np.abs(psi0), ls="--", c="gray", label=f"abs:{d}")
-        ax1.plot(x, np.real(psi1), label=f"Re:{d}")
-        ax1.plot(x, np.imag(psi1), label=f"Im:{d}")
+        ax1.plot(x, np.real(psi1), label=f"Re:{d}", c=clr, ls=":")
+        ax1.plot(x, np.imag(psi1), label=f"Im:{d}", c=clr)
         # ax1.plot(x, np.abs(psi1), ls="--", c="gray", label=f"abs:{d}")
     ax0.legend()
     ax1.legend()
@@ -391,7 +395,7 @@ if __name__ == "__main__":
     ep_parser = sub.add_parser("poly", help="tests the block encoding of P(x)")
     ep_parser.add_argument("-n", type=int, default=5, help="Number of encoding qubits")
     ep_parser.add_argument("-d", "--asin-degree", nargs="*", default=[5], type=int, help="degree(s) of the polynomial approximating arcsin")
-    ep_parser.add_argument("-c", "--coef", nargs='+', type=float, required=True)
+    ep_parser.add_argument("-c", "--coef", nargs='+', type=float, required=True, help="coefficients of the polynomial")
 
 
     ns = parser.parse_args()
