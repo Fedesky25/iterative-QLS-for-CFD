@@ -151,21 +151,25 @@ def int_xcirc(n: int):
 
 class AsinApprox:
     def __init__(self, maxdegree: int = 5, sample: int = 100) -> None:
-        assert maxdegree >= 3, "Degree must be at least 3"
-        n = (maxdegree - 1) >> 1
-        self.degree = 2*n + 1
-        b = np.empty(n)
-        A = np.empty((n, n))
-        for k in range(1, n+1):
-            b[k-1] = 1/12 + 1/(2*k + 2) - 1/(2*k + 3) - (2*k + 1)/(k+1) * int_xcirc(2*k) / pi
-            for l in range(1, n+1):
-                A[k-1,l-1] = 1/(2*l + 2*k + 3) - 1/(2*l + 3) - 1/(2*k + 3) + 1/3
-        self.coef = np.linalg.solve(A, b)
-        poly_coef = np.zeros(1 + self.degree)
-        poly_coef[1] = sum(self.coef) - 1
-        for k in range(n):
-            poly_coef[2*k + 3] = -self.coef[k]
-        self.poly = Polynomial(poly_coef)
+        if maxdegree < 3:
+            self.degree = 1
+            self.coef = np.empty(0)
+            self.poly = Polynomial([0, -1])
+        else:
+            n = (maxdegree - 1) >> 1
+            self.degree = 2*n + 1
+            b = np.empty(n)
+            A = np.empty((n, n))
+            for k in range(1, n+1):
+                b[k-1] = 1/12 + 1/(2*k + 2) - 1/(2*k + 3) - (2*k + 1)/(k+1) * int_xcirc(2*k) / pi
+                for l in range(1, n+1):
+                    A[k-1,l-1] = 1/(2*l + 2*k + 3) - 1/(2*l + 3) - 1/(2*k + 3) + 1/3
+            self.coef = np.linalg.solve(A, b)
+            poly_coef = np.zeros(1 + self.degree)
+            poly_coef[1] = sum(self.coef) - 1
+            for k in range(n):
+                poly_coef[2*k + 3] = -self.coef[k]
+            self.poly = Polynomial(poly_coef)
 
     def __call__(self, x):
         return self.poly(x)
