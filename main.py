@@ -181,7 +181,12 @@ class AsinApprox:
         return result
 
 
-def get_phi(poly: Polynomial, print_info = False) -> NDArray[np.float64]:
+def get_phi(
+    poly: Polynomial,
+    maxiter: int = 10_000,
+    epsilon: float = 1e-12,
+    print_info = False
+) -> NDArray[np.float64]:
     cheb_coef = poly2cheb(poly.coef)
     parity = (len(poly.coef) & 1) ^ 1
 
@@ -189,16 +194,22 @@ def get_phi(poly: Polynomial, print_info = False) -> NDArray[np.float64]:
     # print("Laurent phi: ", phi)
 
     with nostdout():
-        _, error, iterations, info = newton_solver(cheb_coef[parity::2], parity=parity, maxiter=10_000)
+        _, error, iterations, info = newton_solver(
+            cheb_coef[parity::2],
+            parity=parity,
+            maxiter=maxiter,
+            crit=epsilon
+        )
 
     if print_info:
         print(" • Parity: ", parity)
         print(" • Monomial: ", poly.coef)
         print(" • Chebyshev: ", cheb_coef)
         print(" • Red. phases: ", info.reduced_phases)
-        print(" • Full phases: ", info.full_phases)
-        print(" • Residual error: ", error)
-        print(" • Total iterations: ", iterations)
+        print(" • Full phases: ", np.array2string(info.full_phases, separator=", "))  # type: ignore
+        # print(" • Deg. phases: ", np.array2string(info.full_phases * 180 / np.pi, floatmode="maxprec", precision=4, separator=", "), "deg") # type: ignore
+        print(f" • Residual error: {error} (target: {epsilon})")
+        print(f" • Total iterations: {iterations} / {maxiter}")
 
     return info.full_phases # type: ignore
 
@@ -386,6 +397,8 @@ if __name__ == "__main__":
 
     # phase factor computation
     pf_parser = sub.add_parser("phi", help="computes the phase factors of a polynomial")
+    pf_parser.add_argument("-M", "--max-iter", type=int, default=10_000, help="maximum number of iterations")
+    pf_parser.add_argument("-e", "--epsilon", type=float, default=1e-12, help="target residual error")
     pf_parser.add_argument("coef", type=float, nargs="+")
 
     # encoding of sin
@@ -413,7 +426,7 @@ if __name__ == "__main__":
 
     np.set_printoptions(linewidth=np.inf) # type: ignore
     if ns.cmd == "phi":
-        get_phi(Polynomial(ns.coef), True)
+        get_phi(Polynomial(ns.coef), ns.max_iter, ns.epsilon, True)
     elif ns.cmd == "sin":
         test_sin(ns.n, ns.flip)
     elif ns.cmd == "asin":
