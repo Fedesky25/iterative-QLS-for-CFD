@@ -214,6 +214,37 @@ def get_phi(
     return info.full_phases # type: ignore
 
 
+def Wpoly(nqubits: int, poly: Polynomial, asin_degree: int = 7, print_phi=False):
+    """ Block encodes the given polynomial using QSVT on block encoding of sin
+
+    The first `nqubits` qubits encode the value of P(x).
+    An ancilla qubit is appended and used to perform the block encoding.
+
+    # Arguments
+    - `nqubits`: number of qubits
+    - `poly`: polynomial to (approximately) encode
+    - `asin_degree`: degree of the polynomial approximationg arcsin
+    """
+    asin = AsinApprox(asin_degree)
+    f = asin.compose_poly(poly)
+    phi = get_phi(f, print_info=print_phi)
+
+    a = QuantumRegister(1, "a")
+    x = QuantumRegister(nqubits, "x")
+    qc = QuantumCircuit(x, a)
+
+    w = Wsin(nqubits)
+    w_qubits = [a[0], *x]
+
+    N = len(phi)
+    for i in range(0, N-1):
+        qc.rz(-2*phi[i], a)
+        qc.append(w, w_qubits)
+    qc.rz(-2*phi[-1], a)
+
+    return qc.to_gate(label="$W_{poly}$")
+
+
 def convert_phi(phi: NDArray[np.float64]):
     result = phi - pi/2
     result[0] += pi/4
