@@ -214,7 +214,7 @@ def get_phi(
     return info.full_phases # type: ignore
 
 
-def Wpoly(nqubits: int, poly: Polynomial, asin_degree: int = 7, print_phi=False):
+def Wpoly(nqubits: int, poly: Polynomial, print_phi=False):
     """ Block encodes the given polynomial using QSVT on block encoding of sin
 
     The first `nqubits` qubits encode the value of P(x).
@@ -222,12 +222,9 @@ def Wpoly(nqubits: int, poly: Polynomial, asin_degree: int = 7, print_phi=False)
 
     # Arguments
     - `nqubits`: number of qubits
-    - `poly`: polynomial to (approximately) encode
-    - `asin_degree`: degree of the polynomial approximationg arcsin
+    - `poly`: polynomial to encode
     """
-    asin = AsinApprox(asin_degree)
-    f = asin.compose_poly(poly)
-    phi = get_phi(f, print_info=print_phi)
+    phi = get_phi(poly, print_info=print_phi)
 
     a = QuantumRegister(1, "a")
     x = QuantumRegister(nqubits, "x")
@@ -371,7 +368,9 @@ def test_poly(
 
     for deg in asin_degrees:
         print(f"[Asin degree = {deg:2}]")
-        w = Wpoly(n, poly, deg, print_phi=True)
+        asin = AsinApprox(deg)
+        g = asin.compose_poly(poly)
+        w = Wpoly(n, g, print_phi=True)
         qc.append(w, w_qubits)
         tc = transpile(qc, backend)
         svs.append(backend.run(tc).result().get_statevector().data)
