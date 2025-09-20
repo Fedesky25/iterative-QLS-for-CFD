@@ -182,12 +182,13 @@ class AsinApprox:
 
 
 def get_phi(
-    poly: Polynomial,
+    poly: Polynomial | Chebyshev,
     maxiter: int = 10_000,
     epsilon: float = 1e-12,
     print_info = False
 ) -> NDArray[np.float64]:
-    cheb_coef = poly2cheb(poly.coef)
+
+    cheb_coef = poly.coef if type(poly) is Chebyshev else poly2cheb(poly.coef)
     parity = (len(poly.coef) & 1) ^ 1
 
     # phi = QSP_phases(Chebyshev(cheb_coef))
@@ -203,7 +204,6 @@ def get_phi(
 
     if print_info:
         print(" • Parity: ", parity)
-        print(" • Monomial: ", poly.coef)
         print(" • Chebyshev: ", cheb_coef)
         print(" • Red. phases: ", info.reduced_phases)
         print(" • Full phases: ", np.array2string(info.full_phases, separator=", "))  # type: ignore
@@ -214,7 +214,7 @@ def get_phi(
     return info.full_phases # type: ignore
 
 
-def Wpoly(nqubits: int, poly: Polynomial, print_phi=False):
+def Wpoly(nqubits: int, poly: Polynomial | Chebyshev, print_phi=False):
     """ Block encodes the given polynomial using QSVT on block encoding of sin
 
     The first `nqubits` qubits encode the value of P(x).
@@ -240,6 +240,71 @@ def Wpoly(nqubits: int, poly: Polynomial, print_phi=False):
     qc.rz(-2*phi[-1], a)
 
     return qc.to_gate(label="$W_{poly}$")
+
+
+def success_lower_bound(poly: Chebyshev, maxP: float = 1.0):
+    return 0.5 * np.sum(np.square(poly.coef)) / (maxP * maxP)
+
+
+def diffuser(n: int):
+    ctrl = list(range(1, n+2))
+    qc = QuantumCircuit(n + 2)
+    qc.z(0)
+    qc.h(list(range(1, n)))
+    qc.x(ctrl)
+    qc.mcx(ctrl, 0)
+    qc.x(ctrl)
+    qc.h(list(range(1, n)))
+    qc.z(0)
+    return qc.to_gate(label="D")
+
+
+def prepare(nqubits: int, poly: Polynomial, Pmax: float = 1, asin_degree: int = 7):
+    """ Prepares the first `nqubits` in the state given by the polynomial
+
+    # Arguments
+    - `nqubits`: number of qubits
+    - `poly`: polynomial describing the imaginary part of the desired state
+    - `Pmax`: maximum absolute value of the polynomial in the domain [-1, +1] (default 1)
+    - `asin_degree`: degree of the polynomial approximating the arcsin
+    """
+
+    asin = AsinApprox(asin_degree)
+    P = asin.compose_poly(poly)
+    P = Chebyshev(poly2cheb(P.coef))
+
+    F = np.linalg.norm(P.coef) / Pmax
+    a = F * 2/3
+    k = int(np.ceil(np.pi/(4 * np.arcsin(a)) - 0.5))
+    omega = 2 * np.arccos(np.sin(np.pi / (4*k + 2) / a))
+
+
+    a = QuantumRegister(2, "a")
+    x = QuantumRegister(nqubits, "x")
+    qc = QuantumCircuit(x, a)
+
+    D = diffuser(nqubits)
+    D_qubits = [*x, *a]
+
+    W = Wpoly(nqubits, P)
+    W_dag = reverse_gate(W)
+    W_qubits = [*x, a[0]]
+
+    qc.h(x)
+    for _ in range(k):
+        qc.append(W, W_qubits)
+        qc.ry(omega, a[1])
+        qc.x(a)
+        qc.cz(a[0], a[1])
+        qc.x(a)
+        qc.ry(-omega, a[1])
+        qc.append(W_dag, W_qubits)
+        qc.append(D, D_qubits)
+    qc.append(W, W_qubits)
+
+    backend = StatevectorSimulator()
+    tc = transpile(qc, backend)
+    return backend.run(tc).result().get_statevector().data
 
 
 def convert_phi(phi: NDArray[np.float64]):
@@ -357,6 +422,7 @@ def test_poly(
     plot_abs: bool = False,
     flip: bool = False,
 ):
+    N = 1 << n
     poly = Polynomial(coefficients)
     backend = StatevectorSimulator()
     svs: list[NDArray[np.complex64]] = []
@@ -369,11 +435,14 @@ def test_poly(
     for deg in asin_degrees:
         print(f"[Asin degree = {deg:2}]")
         asin = AsinApprox(deg)
-        g = asin.compose_poly(poly)
-        w = Wpoly(n, g, print_phi=True)
+        P = Chebyshev(poly2cheb(asin.compose_poly(poly).coef))
+        w = Wpoly(n, P, print_phi=True)
         qc.append(w, w_qubits)
         tc = transpile(qc, backend)
-        svs.append(backend.run(tc).result().get_statevector().data)
+        sv = backend.run(tc).result().get_statevector().data
+        print(f" • Success (low.): {success_lower_bound(P)*100:8.5f}%")
+        print(f" • Success (true): {np.linalg.vector_norm(sv[:N])**2 * 100:8.5f}%")
+        svs.append(sv)
         qc.data.pop()
 
     Nd = len(asin_degrees)
@@ -400,6 +469,43 @@ def test_poly(
     ax0.legend()
     ax1.legend()
     plt.show()
+
+
+def test_prepare(
+    coefficients: list[float],
+    nqubits: int = 5,
+    asin_degree: int = 7,
+    plot_real: bool = False,
+    plot_abs: bool = False,
+):
+    H = (1 << (nqubits + 1))
+    sv = prepare(nqubits, Polynomial(coefficients), asin_degree=asin_degree)
+    x, psi00, psi01 = interpret_sv(sv[:H])
+    x, psi10, psi11 = interpret_sv(sv[H:])
+
+    fig, axs = plt.subplots(2, 2, figsize=(12, 6), sharex=True, sharey=True)
+    axs[0,0].set_xlim(-1, 1)
+    axs[0,0].set_ylim(-1, 1)
+
+    axs[0,0].plot(x, np.imag(psi00))
+    axs[0,1].plot(x, np.imag(psi01))
+    axs[1,0].plot(x, np.imag(psi10))
+    axs[1,1].plot(x, np.imag(psi11))
+
+    if plot_real:
+        axs[0,0].plot(x, np.real(psi00), ls=":")
+        axs[0,1].plot(x, np.real(psi01), ls=":")
+        axs[1,0].plot(x, np.real(psi10), ls=":")
+        axs[1,1].plot(x, np.real(psi11), ls=":")
+
+    if plot_abs:
+        axs[0,0].plot(x, np.abs(psi00), ls="--")
+        axs[0,1].plot(x, np.abs(psi01), ls="--")
+        axs[1,0].plot(x, np.abs(psi10), ls="--")
+        axs[1,1].plot(x, np.abs(psi11), ls="--")
+
+    plt.show()
+
 
 
 if __name__ == "__main__":
@@ -433,6 +539,14 @@ if __name__ == "__main__":
     ep_parser.add_argument("-n", type=int, default=7, help="Number of encoding qubits")
     ep_parser.add_argument("-d", "--asin-degree", nargs="*", default=[5], type=int, help="degree(s) of the polynomial approximating arcsin")
 
+    # prepare polynomial
+    pp_parser = sub.add_parser("prepare", help="tests state preparation")
+    pp_parser.add_argument("coef", nargs='+', type=float, help="coefficients of the polynomial")
+    pp_parser.add_argument("-r", "--real", action="store_true", help="plot the real part")
+    pp_parser.add_argument("-a", "--abs", action="store_true", help="plot the absolute value")
+    pp_parser.add_argument("-d", "--asin-degree", type=int, default=7, help="degree(s) of the polynomial approximating arcsin")
+    pp_parser.add_argument("-n", type=int, default=7, help="Number of encoding qubits")
+
 
     ns = parser.parse_args()
 
@@ -445,6 +559,8 @@ if __name__ == "__main__":
         test_asin(ns.degree, not ns.noplot, ns.real, ns.npts)
     elif ns.cmd == "poly":
         test_poly(ns.coef, ns.n, ns.asin_degree, ns.real, ns.abs, ns.flip)
+    elif ns.cmd == "prepare":
+        test_prepare(ns.coef, ns.n, ns.asin_degree, ns.real, ns.abs)
 
 
 
