@@ -12,7 +12,9 @@ from numpy.polynomial.chebyshev import Chebyshev, poly2cheb
 from numpy.typing import NDArray
 import numpy as np
 
-from pyqsp.angle_sequence import QuantumSignalProcessingPhases as QSP_phases
+from pyqsp.angle_sequence import QuantumSignalProcessingPhases as QSP_phases, poly2laurent
+from pyqsp.completion import completion_from_root_finding
+from pyqsp.decomposition import angseq
 from pyqsp.sym_qsp_opt import newton_solver
 
 from argparse import ArgumentParser
@@ -184,34 +186,48 @@ class AsinApprox:
 def get_phi(
     poly: Polynomial | Chebyshev,
     maxiter: int = 10_000,
-    epsilon: float = 1e-12,
+    laurent: bool = False,
+    epsilon: float | None = None,
     print_info = False
 ) -> NDArray[np.float64]:
+
+    if epsilon is None:
+        epsilon = 1e-4 if laurent else 1e-12
 
     cheb_coef = poly.coef if type(poly) is Chebyshev else poly2cheb(poly.coef)
     parity = (len(poly.coef) & 1) ^ 1
 
-    # phi = QSP_phases(Chebyshev(cheb_coef))
-    # print("Laurent phi: ", phi)
+    if laurent:
+        cheb_coef[-1] += 0.5*epsilon
+        cheb_coef *= 0.9999 # type: ignore
+        lcoefs = poly2laurent(cheb_coef)
+        lalg = completion_from_root_finding(lcoefs, coef_type="F")
+        phi = np.array(angseq(lalg))
 
-    with nostdout():
-        _, error, iterations, info = newton_solver(
-            cheb_coef[parity::2],
-            parity=parity,
-            maxiter=maxiter,
-            crit=epsilon
-        )
+        if print_info:
+            print(" • Parity: ", parity, "\n • Chebyshev: ", cheb_coef)
+            print(" • Phases: ", np.array2string(phi, separator=", "))
 
-    if print_info:
-        print(" • Parity: ", parity)
-        print(" • Chebyshev: ", cheb_coef)
-        print(" • Red. phases: ", info.reduced_phases)
-        print(" • Full phases: ", np.array2string(info.full_phases, separator=", "))  # type: ignore
-        # print(" • Deg. phases: ", np.array2string(info.full_phases * 180 / np.pi, floatmode="maxprec", precision=4, separator=", "), "deg") # type: ignore
-        print(f" • Residual error: {error} (target: {epsilon})")
-        print(f" • Total iterations: {iterations} / {maxiter}")
+        return phi
 
-    return info.full_phases # type: ignore
+    else:
+        with nostdout():
+            _, error, iterations, info = newton_solver(
+                cheb_coef[parity::2],
+                parity=parity,
+                maxiter=maxiter,
+                crit=epsilon
+            )
+
+        if print_info:
+            print(" • Parity: ", parity, "\n • Chebyshev: ", cheb_coef)
+            print(" • Red. phases: ", info.reduced_phases)
+            print(" • Full phases: ", np.array2string(info.full_phases, separator=", "))  # type: ignore
+            # print(" • Deg. phases: ", np.array2string(info.full_phases * 180 / np.pi, floatmode="maxprec", precision=4, separator=", "), "deg") # type: ignore
+            print(f" • Residual error: {error} (target: {epsilon})")
+            print(f" • Total iterations: {iterations} / {maxiter}")
+
+        return info.full_phases # type: ignore
 
 
 def Wpoly(nqubits: int, poly: Polynomial | Chebyshev, print_phi=False):
@@ -381,10 +397,20 @@ def qsp_op(phi):
     ])
 
 
-def test_asin(degrees: list[int], plot: bool = False, plot_real: bool = False, npt: int = 101):
+class PlotOptions:
+    def __init__(self, real: bool, imag: bool, abs: bool) -> None:
+        self.real = real
+        self.imag = imag
+        self.abs = abs
+
+    def __bool__(self):
+        return self.real or self.imag or self.abs
+
+
+def test_asin(degrees: list[int], plot: PlotOptions | None = None, npt: int = 101, laurent = False):
     Nd = len(degrees)
     approxes = [ AsinApprox(deg) for deg in degrees ]
-    phiset = [ get_phi(a.poly) for a in approxes ]
+    phiset = [ get_phi(a.poly, laurent=laurent) for a in approxes ]
 
     for i in range(Nd):
         print(f"D={degrees[i]}:\n • poly: {approxes[i].poly.coef}\n • phi:  {phiset[i]}")
@@ -392,7 +418,7 @@ def test_asin(degrees: list[int], plot: bool = False, plot_real: bool = False, n
     if plot:
         colors = plt.get_cmap("rainbow", Nd)
         x = np.linspace(0, 1, npt)
-        plt.plot(x, -2/pi * np.asin(x), ls=":", c="black", label="asin")
+        plt.plot(x, -2/pi * np.asin(x), ls="--", c="black", label="asin")
         for i in range(Nd):
             qy = np.empty(npt, dtype=np.complex64)
             S = [ qsp_op(phi) for phi in phiset[i] ]
@@ -403,12 +429,18 @@ def test_asin(degrees: list[int], plot: bool = False, plot_real: bool = False, n
                     U = U @ W @ s
                 qy[j] = U[0,0]
 
-            c1 = colors(Nd - 1 - i)
-            c2 = tuple(v*0.5 for v in c1)
-            plt.plot(x, approxes[i](x), label=f"P:{degrees[i]}", c=c1)
-            plt.plot(x, np.imag(qy), label=f"Im:{degrees[i]}", ls="--", c=c2)
-            if plot_real:
-                plt.plot(x, np.real(qy), label=f"Re:{degrees[i]}", ls=":", c=c2)
+            c = colors(Nd - 1 - i)
+            # c2 = tuple(v*0.5 for v in c1)
+            # plt.plot(x, approxes[i](x), label=f"P:{degrees[i]}", c=c1)
+            if plot.real:
+                lsr = "-" if laurent else ":"
+                plt.plot(x, np.real(qy), label=f"Re:{degrees[i]}", ls=lsr, c=c)
+            if plot.imag:
+                lsi = ":" if laurent else "-"
+                plt.plot(x, np.imag(qy), label=f"Im:{degrees[i]}", ls=lsi, c=c)
+            if plot.abs:
+                plt.plot(x, np.imag(qy), label=f"Im:{degrees[i]}", ls="--", c=c)
+
 
         plt.legend()
         plt.show()
@@ -526,7 +558,10 @@ if __name__ == "__main__":
     # approximation of asin
     aa_parser = sub.add_parser("asin", help="computes the approximation to arcsin")
     aa_parser.add_argument("--noplot", action="store_true", help="do not plot the result")
-    aa_parser.add_argument("-r", "--real", action="store_true", help="plot also the real part")
+    aa_parser.add_argument("-l", "--laurent", action="store_true", help="use Laurent method")
+    aa_parser.add_argument("-r", "--real", action="store_true", help="plot the real part")
+    aa_parser.add_argument("-i", "--imag", action="store_true", help="plot the imaginary part")
+    aa_parser.add_argument("-a", "--abs", action="store_true", help="plot the absolute value")
     aa_parser.add_argument("-n", "--npts", type=int, default=101, help="number of sampling points")
     aa_parser.add_argument("degree", type=int, nargs='+', help="degree(s) of the approximating polynomial")
 
@@ -556,7 +591,7 @@ if __name__ == "__main__":
     elif ns.cmd == "sin":
         test_sin(ns.n, ns.flip)
     elif ns.cmd == "asin":
-        test_asin(ns.degree, not ns.noplot, ns.real, ns.npts)
+        test_asin(ns.degree, PlotOptions(ns.real, ns.imag, ns.abs), ns.npts, ns.laurent)
     elif ns.cmd == "poly":
         test_poly(ns.coef, ns.n, ns.asin_degree, ns.real, ns.abs, ns.flip)
     elif ns.cmd == "prepare":
