@@ -352,49 +352,30 @@ def test_asin(degrees: list[int], plot: bool = False, plot_real: bool = False, n
         plt.show()
 
 
-def simulate(coefficients = [0, 1], n = 5, asin_degree = 5):
-    asin = AsinApprox(asin_degree)
-    f = Polynomial(coefficients)
-    g = asin.compose_poly(f)
-
-    print(f"[Asin degree = {asin_degree:2}]")
-    phi = get_phi(g, print_info=True)
-
-    x = QuantumRegister(n, "x")
-    ancillas = QuantumRegister(1, "a")
-    qc = QuantumCircuit(x, ancillas)
-
-    u = Wsin(n)
-    u_qubits = [ancillas[0], *x]
-
-    N = len(phi)
-    phi = np.flip(phi)
-
-    qc.h(x)
-    for i in range(0, N-1):
-        # qc.append(PCPhase(phi[i]), ancillas)
-        qc.rz(-2*phi[i], ancillas)
-        qc.append(u, u_qubits)
-
-    qc.rz(-2*phi[-1], ancillas)
-
-    # qc.draw("mpl")
-    # plt.show()
-
-    backend = StatevectorSimulator()
-    tc = transpile(qc, backend)
-    sv: NDArray[np.complex64] = backend.run(tc).result().get_statevector().data
-    return sv
-
-
 def test_poly(
     coefficients: list[float],
     n: int = 5,
-    asin_degrees: list[int] = [5],
+    asin_degrees: list[int] = [7],
     plot_real: bool = False,
     plot_abs: bool = False,
+    flip: bool = False,
 ):
-    svs = [ simulate(coefficients, n, d) for d in asin_degrees ]
+    poly = Polynomial(coefficients)
+    backend = StatevectorSimulator()
+    svs: list[NDArray[np.complex64]] = []
+    w_qubits = list(range(0, n+1))
+    qc = QuantumCircuit(n + 1)
+    qc.h(list(range(0, n)))
+    if flip:
+        qc.x(n)
+
+    for deg in asin_degrees:
+        print(f"[Asin degree = {deg:2}]")
+        w = Wpoly(n, poly, deg, print_phi=True)
+        qc.append(w, w_qubits)
+        tc = transpile(qc, backend)
+        svs.append(backend.run(tc).result().get_statevector().data)
+        qc.data.pop()
 
     Nd = len(asin_degrees)
     cm = plt.get_cmap("rainbow", Nd)
@@ -434,7 +415,7 @@ if __name__ == "__main__":
 
     # encoding of sin
     es_parser = sub.add_parser("sin", help="tests the block encoding of sin(-x)")
-    es_parser.add_argument("-f", "--flip", action="store_true")
+    es_parser.add_argument("-f", "--flip", action="store_true", help="flip the ancilla qubit")
     es_parser.add_argument("-n", type=int, default=5, help="Number of encoding qubits")
 
     # approximation of asin
@@ -449,7 +430,8 @@ if __name__ == "__main__":
     ep_parser.add_argument("coef", nargs='+', type=float, help="coefficients of the polynomial")
     ep_parser.add_argument("-r", "--real", action="store_true", help="plot the real part")
     ep_parser.add_argument("-a", "--abs", action="store_true", help="plot the absolute value")
-    ep_parser.add_argument("-n", type=int, default=5, help="Number of encoding qubits")
+    ep_parser.add_argument("-f", "--flip", action="store_true", help="flip the ancilla qubit")
+    ep_parser.add_argument("-n", type=int, default=7, help="Number of encoding qubits")
     ep_parser.add_argument("-d", "--asin-degree", nargs="*", default=[5], type=int, help="degree(s) of the polynomial approximating arcsin")
 
 
@@ -463,7 +445,7 @@ if __name__ == "__main__":
     elif ns.cmd == "asin":
         test_asin(ns.degree, not ns.noplot, ns.real, ns.npts)
     elif ns.cmd == "poly":
-        test_poly(ns.coef, ns.n, ns.asin_degree, ns.real, ns.abs)
+        test_poly(ns.coef, ns.n, ns.asin_degree, ns.real, ns.abs, ns.flip)
 
 
 
