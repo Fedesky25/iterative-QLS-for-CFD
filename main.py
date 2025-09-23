@@ -343,12 +343,12 @@ def interpret_sv(sv: NDArray):
     psi1[H:N] = sv[N:N+H]
     psi1 *= sqrt(N)
 
-    x = np.linspace(-1, 1, N, endpoint=False)
-    return (x, psi0, psi1)
+    return (psi0, psi1)
 
 
 def plot_sv(sv: NDArray):
-    x, psi0, psi1 = interpret_sv(sv)
+    psi0, psi1 = interpret_sv(sv)
+    x = np.linspace(-1, 1, len(sv) >> 1, endpoint=False)
     fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(12, 6))
     ax0.set_xlim(-1, 1)
     ax0.set_ylim(-1, 1)
@@ -480,6 +480,7 @@ def test_poly(
     Nd = len(asin_degrees)
     cm = plt.get_cmap("rainbow", Nd)
 
+    x = np.linspace(-1, 1, 1 << n, endpoint=False)
     fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(12, 6))
     ax0.set_xlim(-1, 1)
     ax0.set_ylim(-1, 1)
@@ -489,7 +490,7 @@ def test_poly(
     for i in range(Nd):
         clr = cm(Nd - 1 - i)
         d = asin_degrees[i]
-        x, psi0, psi1 = interpret_sv(svs[i])
+        psi0, psi1 = interpret_sv(svs[i])
         ax0.plot(x, np.imag(psi0), label=f"Im:{d}", c=clr)
         ax1.plot(x, np.imag(psi1), label=f"Im:{d}", c=clr)
         if plot_real:
@@ -512,8 +513,9 @@ def test_prepare(
 ):
     H = (1 << (nqubits + 1))
     sv = prepare(nqubits, Polynomial(coefficients), asin_degree=asin_degree)
-    x, psi00, psi01 = interpret_sv(sv[:H])
-    x, psi10, psi11 = interpret_sv(sv[H:])
+    x = np.linspace(-1, 1, 1 << nqubits, endpoint=False)
+    psi00, psi01 = interpret_sv(sv[:H])
+    psi10, psi11 = interpret_sv(sv[H:])
 
     fig, axs = plt.subplots(2, 2, figsize=(12, 6), sharex=True, sharey=True)
     axs[0,0].set_xlim(-1, 1)
