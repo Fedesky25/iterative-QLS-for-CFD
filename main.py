@@ -448,27 +448,26 @@ def test_asin(degrees: list[int], plot: PlotOptions | None = None, npt: int = 10
 
 def test_poly(
     coefficients: list[float],
-    n: int = 5,
+    nqubits: int = 5,
     asin_degrees: list[int] = [7],
-    plot_real: bool = False,
-    plot_abs: bool = False,
+    plot: PlotOptions | None = None,
     flip: bool = False,
 ):
-    N = 1 << n
+    N = 1 << nqubits
     poly = Polynomial(coefficients)
     backend = StatevectorSimulator()
     svs: list[NDArray[np.complex64]] = []
-    w_qubits = list(range(0, n+1))
-    qc = QuantumCircuit(n + 1)
-    qc.h(list(range(0, n)))
+    w_qubits = list(range(0, nqubits+1))
+    qc = QuantumCircuit(nqubits + 1)
+    qc.h(list(range(0, nqubits)))
     if flip:
-        qc.x(n)
+        qc.x(nqubits)
 
     for deg in asin_degrees:
         print(f"[Asin degree = {deg:2}]")
         asin = AsinApprox(deg)
         P = Chebyshev(poly2cheb(asin.compose_poly(poly).coef))
-        w = Wpoly(n, P, print_phi=True)
+        w = Wpoly(nqubits, P, print_phi=True)
         qc.append(w, w_qubits)
         tc = transpile(qc, backend)
         sv = backend.run(tc).result().get_statevector().data
@@ -477,31 +476,33 @@ def test_poly(
         svs.append(sv)
         qc.data.pop()
 
-    Nd = len(asin_degrees)
-    cm = plt.get_cmap("rainbow", Nd)
+    if plot:
+        Nd = len(asin_degrees)
+        cm = plt.get_cmap("rainbow", Nd)
 
-    x = np.linspace(-1, 1, 1 << n, endpoint=False)
-    fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(12, 6))
-    ax0.set_xlim(-1, 1)
-    ax0.set_ylim(-1, 1)
-    ax1.set_xlim(-1, 1)
-    ax1.set_ylim(-1, 1)
-    ax1.yaxis.tick_right()
-    for i in range(Nd):
-        clr = cm(Nd - 1 - i)
-        d = asin_degrees[i]
-        psi0, psi1 = interpret_sv(svs[i])
-        ax0.plot(x, np.imag(psi0), label=f"Im:{d}", c=clr)
-        ax1.plot(x, np.imag(psi1), label=f"Im:{d}", c=clr)
-        if plot_real:
-            ax0.plot(x, np.real(psi0), label=f"Re:{d}", c=clr, ls=":")
-            ax1.plot(x, np.real(psi1), label=f"Re:{d}", c=clr, ls=":")
-        if plot_abs:
-            ax0.plot(x, np.abs(psi0), label=f"abs:{d}", c=clr, ls="--")
-            ax1.plot(x, np.abs(psi1), label=f"abs:{d}", c=clr, ls="--")
-    ax0.legend()
-    ax1.legend()
-    plt.show()
+        x = np.linspace(-1, 1, 1 << nqubits, endpoint=False)
+        fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(12, 6))
+        ax0.set_xlim(-1, 1)
+        ax0.set_ylim(-1, 1)
+        ax1.set_xlim(-1, 1)
+        ax1.set_ylim(-1, 1)
+        ax1.yaxis.tick_right()
+        for i in range(Nd):
+            clr = cm(Nd - 1 - i)
+            d = asin_degrees[i]
+            psi0, psi1 = interpret_sv(svs[i])
+            if plot.imag:
+                ax0.plot(x, np.imag(psi0), label=f"Im:{d}", c=clr)
+                ax1.plot(x, np.imag(psi1), label=f"Im:{d}", c=clr)
+            if plot.real:
+                ax0.plot(x, np.real(psi0), label=f"Re:{d}", c=clr, ls=":")
+                ax1.plot(x, np.real(psi1), label=f"Re:{d}", c=clr, ls=":")
+            if plot.abs:
+                ax0.plot(x, np.abs(psi0), label=f"abs:{d}", c=clr, ls="--")
+                ax1.plot(x, np.abs(psi1), label=f"abs:{d}", c=clr, ls="--")
+        ax0.legend()
+        ax1.legend()
+        plt.show()
 
 
 def test_prepare(
@@ -571,6 +572,7 @@ if __name__ == "__main__":
     ep_parser = sub.add_parser("poly", help="tests the block encoding of P(x)")
     ep_parser.add_argument("coef", nargs='+', type=float, help="coefficients of the polynomial")
     ep_parser.add_argument("-r", "--real", action="store_true", help="plot the real part")
+    ep_parser.add_argument("-i", "--imag", action="store_true", help="plot the imaginary part")
     ep_parser.add_argument("-a", "--abs", action="store_true", help="plot the absolute value")
     ep_parser.add_argument("-f", "--flip", action="store_true", help="flip the ancilla qubit")
     ep_parser.add_argument("-n", type=int, default=7, help="Number of encoding qubits")
@@ -595,7 +597,7 @@ if __name__ == "__main__":
     elif ns.cmd == "asin":
         test_asin(ns.degree, PlotOptions(ns.real, ns.imag, ns.abs), ns.npts, ns.laurent)
     elif ns.cmd == "poly":
-        test_poly(ns.coef, ns.n, ns.asin_degree, ns.real, ns.abs, ns.flip)
+        test_poly(ns.coef, ns.n, ns.asin_degree, PlotOptions(ns.real, ns.imag, ns.abs), ns.flip)
     elif ns.cmd == "prepare":
         test_prepare(ns.coef, ns.n, ns.asin_degree, ns.real, ns.abs)
 
