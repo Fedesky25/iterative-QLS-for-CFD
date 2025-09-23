@@ -19,6 +19,7 @@ from pyqsp.sym_qsp_opt import newton_solver
 
 from argparse import ArgumentParser
 
+import json
 import contextlib
 import sys
 
@@ -451,12 +452,14 @@ def test_poly(
     nqubits: int = 5,
     asin_degrees: list[int] = [7],
     plot: PlotOptions | None = None,
+    export: str | None = None,
     flip: bool = False,
 ):
     N = 1 << nqubits
     poly = Polynomial(coefficients)
     backend = StatevectorSimulator()
     svs: list[NDArray[np.complex64]] = []
+    success: list[float] = []
     w_qubits = list(range(0, nqubits+1))
     qc = QuantumCircuit(nqubits + 1)
     qc.h(list(range(0, nqubits)))
@@ -471,13 +474,15 @@ def test_poly(
         qc.append(w, w_qubits)
         tc = transpile(qc, backend)
         sv = backend.run(tc).result().get_statevector().data
+        suc = np.linalg.vector_norm(sv[:N])**2
         print(f" • Success (low.): {success_lower_bound(P)*100:8.5f}%")
-        print(f" • Success (true): {np.linalg.vector_norm(sv[:N])**2 * 100:8.5f}%")
+        print(f" • Success (true): {suc * 100:8.5f}%")
+        success.append(float(suc))
         svs.append(sv)
         qc.data.pop()
 
+    Nd = len(asin_degrees)
     if plot:
-        Nd = len(asin_degrees)
         cm = plt.get_cmap("rainbow", Nd)
 
         x = np.linspace(-1, 1, 1 << nqubits, endpoint=False)
@@ -503,6 +508,23 @@ def test_poly(
         ax0.legend()
         ax1.legend()
         plt.show()
+
+    if export:
+        def obj(idx: int):
+            psi0, psi1 = interpret_sv(svs[idx])
+            return {
+                "success": success[idx],
+                "asin_degree": asin_degrees[idx],
+                "real": np.real(psi0).tolist(),
+                "imag": np.imag(psi0).tolist(),
+                "spurious": {
+                    "real": np.real(psi1).tolist(),
+                    "imag": np.imag(psi1).tolist(),
+                }
+            }
+        data = [obj(i) for i in range(1, Nd)]
+        with open(export, "w") as f:
+            json.dump(data, f)
 
 
 def test_prepare(
@@ -575,6 +597,7 @@ if __name__ == "__main__":
     ep_parser.add_argument("-i", "--imag", action="store_true", help="plot the imaginary part")
     ep_parser.add_argument("-a", "--abs", action="store_true", help="plot the absolute value")
     ep_parser.add_argument("-f", "--flip", action="store_true", help="flip the ancilla qubit")
+    ep_parser.add_argument("-e", "--export", type=str, default=None, help="export to the provided filename")
     ep_parser.add_argument("-n", type=int, default=7, help="Number of encoding qubits")
     ep_parser.add_argument("-d", "--asin-degree", nargs="*", default=[5], type=int, help="degree(s) of the polynomial approximating arcsin")
 
@@ -597,7 +620,7 @@ if __name__ == "__main__":
     elif ns.cmd == "asin":
         test_asin(ns.degree, PlotOptions(ns.real, ns.imag, ns.abs), ns.npts, ns.laurent)
     elif ns.cmd == "poly":
-        test_poly(ns.coef, ns.n, ns.asin_degree, PlotOptions(ns.real, ns.imag, ns.abs), ns.flip)
+        test_poly(ns.coef, ns.n, ns.asin_degree, PlotOptions(ns.real, ns.imag, ns.abs), ns.export, ns.flip)
     elif ns.cmd == "prepare":
         test_prepare(ns.coef, ns.n, ns.asin_degree, ns.real, ns.abs)
 
