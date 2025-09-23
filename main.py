@@ -482,10 +482,11 @@ def test_poly(
         qc.data.pop()
 
     Nd = len(asin_degrees)
+    x = np.linspace(-1, 1, 1 << nqubits, endpoint=False)
+
     if plot:
         cm = plt.get_cmap("rainbow", Nd)
 
-        x = np.linspace(-1, 1, 1 << nqubits, endpoint=False)
         fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(12, 6))
         ax0.set_xlim(-1, 1)
         ax0.set_ylim(-1, 1)
@@ -513,6 +514,7 @@ def test_poly(
         def obj(idx: int):
             psi0, psi1 = interpret_sv(svs[idx])
             return {
+                "x": x.tolist(),
                 "success": success[idx],
                 "asin_degree": asin_degrees[idx],
                 "real": np.real(psi0).tolist(),
