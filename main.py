@@ -266,6 +266,16 @@ def success_lower_bound(poly: Chebyshev, maxP: float = 1.0):
     return 0.5 * np.sum(np.square(poly.coef)) / (maxP * maxP)
 
 
+def success_inf(poly: Polynomial) -> float:
+    """Computes the success probability P of `poly` in the limit n -> +inf"""
+    S = poly * poly
+    N = S.degree()
+    result = 0
+    for k in range(0, N+1, 2):
+        result += S.coef[k] / (k + 1)
+    return result
+
+
 def diffuser(n: int):
     ctrl = list(range(1, n+2))
     qc = QuantumCircuit(n + 2)
@@ -459,16 +469,21 @@ def test_poly(
     export: str | None = None,
 ):
     N = 1 << nqubits
-    poly = Polynomial(coefficients)
+    T = Polynomial(coefficients)
     backend = StatevectorSimulator()
     svs: list[NDArray[np.complex64]] = []
-    success: list[float] = []
+    P_n_TAsin: list[float] = []
+    P_inf_TAsin: list[float] = []
     w_qubits = list(range(0, nqubits+1))
+
+    P_inf_T = success_inf(T)
+    print(f" • P[inf](T): {P_inf_T*100:8.5f}%")
 
     for deg in asin_degrees:
         print(f"[Asin degree = {deg:2}]")
         asin = AsinApprox(deg)
-        P = Chebyshev(poly2cheb(asin.compose_poly(poly).coef))
+        P = asin.compose_poly(T)
+        P = Chebyshev(poly2cheb(P.coef))
         w = Wpoly(nqubits, P, print_phi=True)
         qc = QuantumCircuit(nqubits + 1)
         qc.h(list(range(0, nqubits)))
@@ -476,9 +491,11 @@ def test_poly(
         tc = transpile(qc, backend)
         sv = backend.run(tc).result().get_statevector().data
         suc = np.linalg.vector_norm(sv[:N])**2
-        print(f" • Success (low.): {success_lower_bound(P)*100:8.5f}%")
-        print(f" • Success (true): {suc * 100:8.5f}%")
-        success.append(float(suc))
+        suc_pred = 0.5 * np.sum(np.square(C.coef)) # type: ignore
+        print(f" • P[inf](T∘A∘sin): {suc_pred*100:8.5f}%")
+        print(f" • P[{nqubits}](T∘A∘sin): {suc * 100:8.5f}%")
+        P_n_TAsin.append(float(suc))
+        P_inf_TAsin.append(suc_pred)
         svs.append(sv)
 
     Nd = len(asin_degrees)
@@ -509,7 +526,8 @@ def test_poly(
         def obj(idx: int):
             psi0, psi1 = interpret_sv(svs[idx])
             return {
-                "success": success[idx],
+                "P_n": P_n_TAsin[idx],
+                "P_inf": P_inf_TAsin[idx],
                 "asin_degree": asin_degrees[idx],
                 "real": np.real(psi0).tolist(),
                 "imag": np.imag(psi0).tolist(),
@@ -519,8 +537,9 @@ def test_poly(
                 }
             }
         data = {
-            "x": x.tolist(),
-            "y": [obj(i) for i in range(0, Nd)]
+            "theta": x.tolist(),
+            "TAsin": [obj(i) for i in range(0, Nd)],
+            "P_inf_T": P_inf_T
         }
         with open(export, "w") as f:
             json.dump(data, f)
