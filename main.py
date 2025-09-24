@@ -491,7 +491,7 @@ def test_poly(
         tc = transpile(qc, backend)
         sv = backend.run(tc).result().get_statevector().data
         suc = np.linalg.vector_norm(sv[:N])**2
-        suc_pred = 0.5 * np.sum(np.square(C.coef)) # type: ignore
+        suc_pred = 0.5 * np.sum(np.square(P.coef)) # type: ignore
         print(f" • P[inf](T∘A∘sin): {suc_pred*100:8.5f}%")
         print(f" • P[{nqubits}](T∘A∘sin): {suc * 100:8.5f}%")
         P_n_TAsin.append(float(suc))
