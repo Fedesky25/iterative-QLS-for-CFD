@@ -251,10 +251,13 @@ def Wpoly(nqubits: int, poly: Polynomial | Chebyshev, print_phi=False):
     w_qubits = [a[0], *x]
 
     N = len(phi)
+    qc.h(a)
     for i in range(0, N-1):
         qc.rz(-2*phi[i], a)
         qc.append(w, w_qubits)
     qc.rz(-2*phi[-1], a)
+    qc.h(a)
+    qc.y(a)
 
     return qc.to_gate(label="$W_{poly}$")
 
@@ -468,10 +471,8 @@ def test_poly(
         P = Chebyshev(poly2cheb(asin.compose_poly(poly).coef))
         w = Wpoly(nqubits, P, print_phi=True)
         qc = QuantumCircuit(nqubits + 1)
-        qc.h(list(range(0, nqubits + 1)))
+        qc.h(list(range(0, nqubits)))
         qc.append(w, w_qubits)
-        qc.h(nqubits)
-        qc.y(nqubits)
         tc = transpile(qc, backend)
         sv = backend.run(tc).result().get_statevector().data
         suc = np.linalg.vector_norm(sv[:N])**2
