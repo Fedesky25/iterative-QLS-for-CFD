@@ -408,7 +408,7 @@ class PlotOptions:
         return self.real or self.imag or self.abs
 
 
-def test_asin(degrees: list[int], plot: PlotOptions | None = None, npt: int = 101, laurent = False):
+def test_asin(degrees: list[int], plot = False, npt: int = 101, laurent = False):
     Nd = len(degrees)
     approxes = [ AsinApprox(deg) for deg in degrees ]
     phiset = [ get_phi(a.poly, laurent=laurent) for a in approxes ]
@@ -421,26 +421,27 @@ def test_asin(degrees: list[int], plot: PlotOptions | None = None, npt: int = 10
         x = np.linspace(0, 1, npt)
         plt.plot(x, -2/pi * np.asin(x), ls="--", c="black", label="asin")
         for i in range(Nd):
-            qy = np.empty(npt, dtype=np.complex64)
+            qr = np.empty(npt, dtype=np.complex64)
+            qi = np.empty(npt, dtype=np.complex64)
             S = [ qsp_op(phi) for phi in phiset[i] ]
             for j in range(npt):
                 W = sig_op(x[j])
                 U = S[0]
                 for s in S[1:]:
                     U = U @ W @ s
-                qy[j] = U[0,0]
+                qr[j] = 0.5 * np.sum(U)
+                qi[j] = 0.5 * (U[0,0] + U[0,1] - U[1,0] - U[1,1])
 
             c = colors(Nd - 1 - i)
             # c2 = tuple(v*0.5 for v in c1)
             # plt.plot(x, approxes[i](x), label=f"P:{degrees[i]}", c=c1)
-            if plot.real:
-                lsr = "-" if laurent else ":"
-                plt.plot(x, np.real(qy), label=f"Re:{degrees[i]}", ls=lsr, c=c)
-            if plot.imag:
-                lsi = ":" if laurent else "-"
-                plt.plot(x, np.imag(qy), label=f"Im:{degrees[i]}", ls=lsi, c=c)
-            if plot.abs:
-                plt.plot(x, np.imag(qy), label=f"Im:{degrees[i]}", ls="--", c=c)
+
+            # r = np.sum()
+            lsr = "-" if laurent else ":"
+            plt.plot(x, np.real(qr), label=f"Re:{degrees[i]}", ls=lsr, c=c)
+
+            lsi = ":" if laurent else "-"
+            plt.plot(x, np.imag(qi), label=f"Im:{degrees[i]}", ls=lsi, c=c)
 
 
         plt.legend()
@@ -451,9 +452,8 @@ def test_poly(
     coefficients: list[float],
     nqubits: int = 5,
     asin_degrees: list[int] = [7],
-    plot: PlotOptions | None = None,
+    plot: bool = False,
     export: str | None = None,
-    flip: bool = False,
 ):
     N = 1 << nqubits
     poly = Polynomial(coefficients)
@@ -461,17 +461,17 @@ def test_poly(
     svs: list[NDArray[np.complex64]] = []
     success: list[float] = []
     w_qubits = list(range(0, nqubits+1))
-    qc = QuantumCircuit(nqubits + 1)
-    qc.h(list(range(0, nqubits)))
-    if flip:
-        qc.x(nqubits)
 
     for deg in asin_degrees:
         print(f"[Asin degree = {deg:2}]")
         asin = AsinApprox(deg)
         P = Chebyshev(poly2cheb(asin.compose_poly(poly).coef))
         w = Wpoly(nqubits, P, print_phi=True)
+        qc = QuantumCircuit(nqubits + 1)
+        qc.h(list(range(0, nqubits + 1)))
         qc.append(w, w_qubits)
+        qc.h(nqubits)
+        qc.y(nqubits)
         tc = transpile(qc, backend)
         sv = backend.run(tc).result().get_statevector().data
         suc = np.linalg.vector_norm(sv[:N])**2
@@ -479,7 +479,6 @@ def test_poly(
         print(f" • Success (true): {suc * 100:8.5f}%")
         success.append(float(suc))
         svs.append(sv)
-        qc.data.pop()
 
     Nd = len(asin_degrees)
     x = np.linspace(-1, 1, 1 << nqubits, endpoint=False)
@@ -497,15 +496,10 @@ def test_poly(
             clr = cm(Nd - 1 - i)
             d = asin_degrees[i]
             psi0, psi1 = interpret_sv(svs[i])
-            if plot.imag:
-                ax0.plot(x, np.imag(psi0), label=f"Im:{d}", c=clr)
-                ax1.plot(x, np.imag(psi1), label=f"Im:{d}", c=clr)
-            if plot.real:
-                ax0.plot(x, np.real(psi0), label=f"Re:{d}", c=clr, ls=":")
-                ax1.plot(x, np.real(psi1), label=f"Re:{d}", c=clr, ls=":")
-            if plot.abs:
-                ax0.plot(x, np.abs(psi0), label=f"abs:{d}", c=clr, ls="--")
-                ax1.plot(x, np.abs(psi1), label=f"abs:{d}", c=clr, ls="--")
+            ax0.plot(x, np.real(psi0), label=f"Re:{d}", c=clr)
+            ax0.plot(x, np.imag(psi0), label=f"Im:{d}", c=clr, ls=":")
+            ax1.plot(x, np.real(psi1), label=f"Re:{d}", c=clr, ls=":")
+            ax1.plot(x, np.imag(psi1), label=f"Im:{d}", c=clr)
         ax0.legend()
         ax1.legend()
         plt.show()
@@ -514,7 +508,6 @@ def test_poly(
         def obj(idx: int):
             psi0, psi1 = interpret_sv(svs[idx])
             return {
-                "x": x.tolist(),
                 "success": success[idx],
                 "asin_degree": asin_degrees[idx],
                 "real": np.real(psi0).tolist(),
@@ -524,7 +517,10 @@ def test_poly(
                     "imag": np.imag(psi1).tolist(),
                 }
             }
-        data = [obj(i) for i in range(1, Nd)]
+        data = {
+            "x": x.tolist(),
+            "y": [obj(i) for i in range(0, Nd)]
+        }
         with open(export, "w") as f:
             json.dump(data, f)
 
@@ -586,19 +582,14 @@ if __name__ == "__main__":
     aa_parser = sub.add_parser("asin", help="computes the approximation to arcsin")
     aa_parser.add_argument("--noplot", action="store_true", help="do not plot the result")
     aa_parser.add_argument("-l", "--laurent", action="store_true", help="use Laurent method")
-    aa_parser.add_argument("-r", "--real", action="store_true", help="plot the real part")
-    aa_parser.add_argument("-i", "--imag", action="store_true", help="plot the imaginary part")
-    aa_parser.add_argument("-a", "--abs", action="store_true", help="plot the absolute value")
+    aa_parser.add_argument("-p", "--plot", action="store_true", help="plot the approximation")
     aa_parser.add_argument("-n", "--npts", type=int, default=101, help="number of sampling points")
     aa_parser.add_argument("degree", type=int, nargs='+', help="degree(s) of the approximating polynomial")
 
     # encodinf of polynomial
     ep_parser = sub.add_parser("poly", help="tests the block encoding of P(x)")
     ep_parser.add_argument("coef", nargs='+', type=float, help="coefficients of the polynomial")
-    ep_parser.add_argument("-r", "--real", action="store_true", help="plot the real part")
-    ep_parser.add_argument("-i", "--imag", action="store_true", help="plot the imaginary part")
-    ep_parser.add_argument("-a", "--abs", action="store_true", help="plot the absolute value")
-    ep_parser.add_argument("-f", "--flip", action="store_true", help="flip the ancilla qubit")
+    ep_parser.add_argument("-p", "--plot", action="store_true", help="plot the result")
     ep_parser.add_argument("-e", "--export", type=str, default=None, help="export to the provided filename")
     ep_parser.add_argument("-n", type=int, default=7, help="Number of encoding qubits")
     ep_parser.add_argument("-d", "--asin-degree", nargs="*", default=[5], type=int, help="degree(s) of the polynomial approximating arcsin")
@@ -620,9 +611,9 @@ if __name__ == "__main__":
     elif ns.cmd == "sin":
         test_sin(ns.n, ns.flip)
     elif ns.cmd == "asin":
-        test_asin(ns.degree, PlotOptions(ns.real, ns.imag, ns.abs), ns.npts, ns.laurent)
+        test_asin(ns.degree, ns.plot, ns.npts, ns.laurent)
     elif ns.cmd == "poly":
-        test_poly(ns.coef, ns.n, ns.asin_degree, PlotOptions(ns.real, ns.imag, ns.abs), ns.export, ns.flip)
+        test_poly(ns.coef, ns.n, ns.asin_degree, ns.plot, ns.export)
     elif ns.cmd == "prepare":
         test_prepare(ns.coef, ns.n, ns.asin_degree, ns.real, ns.abs)
 
