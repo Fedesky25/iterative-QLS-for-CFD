@@ -3,7 +3,9 @@ from qiskit.circuit import Gate, ParameterExpression
 from qiskit.circuit.library.standard_gates import ZGate, GlobalPhaseGate
 from qiskit.compiler import transpile
 from qiskit.providers import Backend
+
 from qiskit_aer import AerSimulator, StatevectorSimulator
+from qiskit_ibm_runtime.fake_provider import FakeTorino
 
 from math import pi, sqrt, sin
 
@@ -27,6 +29,7 @@ import sys
 
 class DummyFile(object):
     def write(self, x): pass
+    def flush(self): pass
 
 @contextlib.contextmanager
 def nostdout():
@@ -233,7 +236,7 @@ def get_phi(
         return info.full_phases # type: ignore
 
 
-def Wpoly(nqubits: int, poly: Polynomial | Chebyshev, print_phi=False):
+def Wpoly(nqubits: int, poly: Polynomial | Chebyshev, phi_eps: float = 1e-12, print_phi=False):
     """ Block encodes the given polynomial using QSVT on block encoding of sin
 
     The first `nqubits` qubits encode the value of P(x).
@@ -243,7 +246,7 @@ def Wpoly(nqubits: int, poly: Polynomial | Chebyshev, print_phi=False):
     - `nqubits`: number of qubits
     - `poly`: polynomial to encode
     """
-    phi = get_phi(poly, print_info=print_phi)
+    phi = get_phi(poly, epsilon=phi_eps, print_info=print_phi)
 
     a = QuantumRegister(1, "a")
     x = QuantumRegister(nqubits, "x")
@@ -298,7 +301,13 @@ def diffuser(n: int):
 
 
 class PreparationCircuit:
-    def __init__(self, nqubits: int, poly: Polynomial, asin_degree: int = 7):
+    def __init__(self,
+        nqubits: int,
+        poly: Polynomial,
+        asin_degree: int = 7,
+        phi_eps: float = 1e-12,
+        print_phi = False
+    ):
         """ Prepares the first `nqubits` in the state given by the polynomial
 
         # Arguments
@@ -320,7 +329,7 @@ class PreparationCircuit:
         x = QuantumRegister(nqubits, "x")
         qc = QuantumCircuit(x, a)
 
-        W = Wpoly(nqubits, H)
+        W = Wpoly(nqubits, H, phi_eps=phi_eps, print_phi=print_phi)
         W_dag = reverse_gate(W)
         W_qubits = [*x, a[0]]
 
@@ -493,6 +502,7 @@ def test_poly(
     nqubits: int = 5,
     asin_degrees: list[int] = [7],
     plot: bool = False,
+    phi_eps: float = 1e-12,
     export: str | None = None,
 ):
     N = 1 << nqubits
@@ -504,14 +514,14 @@ def test_poly(
     w_qubits = list(range(0, nqubits+1))
 
     P_inf_T = success_inf(T)
-    print(f" • P[inf](T): {P_inf_T*100:8.5f}%")
+    print(f"P[inf](T): {P_inf_T*100:8.5f}%")
 
     for deg in asin_degrees:
         print(f"[Asin degree = {deg:2}]")
         asin = AsinApprox(deg)
         P = asin.compose_poly(T)
         P = Chebyshev(poly2cheb(P.coef))
-        w = Wpoly(nqubits, P, print_phi=True)
+        w = Wpoly(nqubits, P, phi_eps=phi_eps, print_phi=True)
         qc = QuantumCircuit(nqubits + 1)
         qc.h(list(range(0, nqubits)))
         qc.append(w, w_qubits)
@@ -572,13 +582,20 @@ def test_poly(
             json.dump(data, f)
 
 
-def test_prepare(coefficients: list[float], nqubits: int = 7, asin_degree: int = 7):
+def test_prepare(
+    coefficients: list[float],
+    nqubits: int = 7,
+    asin_degree: int = 7,
+    phi_eps: float = 1e-12,
+    plot = False,
+    depth = False,
+):
     M = 1 << (nqubits + 1)
     N = M >> 1
     H = N >> 1
 
     P = Polynomial(coefficients)
-    circuit = PreparationCircuit(nqubits, P, asin_degree=asin_degree)
+    circuit = PreparationCircuit(nqubits, P, asin_degree, phi_eps=phi_eps, print_phi=True)
     sv = circuit.statevector()
     alpha = 1 / np.max(np.abs(sv))
     fidelity = (np.linalg.norm(sv[0:N]) / np.linalg.norm(sv))**2;
@@ -590,23 +607,29 @@ def test_prepare(coefficients: list[float], nqubits: int = 7, asin_degree: int =
  • Denormalization: {alpha:.3f}
  • Fidelity: {fidelity*100:.3f}%""")
 
-    psi = [ np.empty(N, dtype=np.complex64) for _ in range(4) ]
-    for k in range(4):
-        psi[k][0:H] = alpha * sv[k*N+H : k*N+N]
-        psi[k][H:N] = alpha * sv[k*N : k*N+H]
+    if depth:
+        b = FakeTorino()
+        tc = transpile(circuit.circuit, b, optimization_level = 3)
+        print(" • Circuit depth:", tc.depth())
 
-    x = np.linspace(-1, 1, 1 << nqubits, endpoint=False)
+    if plot:
+        psi = [ np.empty(N, dtype=np.complex64) for _ in range(4) ]
+        for k in range(4):
+            psi[k][0:H] = alpha * sv[k*N+H : k*N+N]
+            psi[k][H:N] = alpha * sv[k*N : k*N+H]
 
-    fig, axs = plt.subplots(1, 4, figsize=(12, 6), sharex=True, sharey=True)
-    axs[0].set_xlim(-1, 1)
-    axs[0].set_ylim(-1, 1)
-    axs[0].plot(x, P(x), c="black", ls="--")
+        x = np.linspace(-1, 1, 1 << nqubits, endpoint=False)
 
-    for k in range(4):
-        axs[k].plot(x, np.real(psi[k]))
-        axs[k].plot(x, np.imag(psi[k]), ls=":")
+        fig, axs = plt.subplots(1, 4, figsize=(12, 6), sharex=True, sharey=True)
+        axs[0].set_xlim(-1, 1)
+        axs[0].set_ylim(-1, 1)
+        axs[0].plot(x, P(x), c="black", ls="--")
 
-    plt.show()
+        for k in range(4):
+            axs[k].plot(x, np.real(psi[k]))
+            axs[k].plot(x, np.imag(psi[k]), ls=":")
+
+        plt.show()
 
 
 
@@ -637,7 +660,8 @@ if __name__ == "__main__":
     ep_parser = sub.add_parser("poly", help="tests the block encoding of P(x)")
     ep_parser.add_argument("coef", nargs='+', type=float, help="coefficients of the polynomial")
     ep_parser.add_argument("-p", "--plot", action="store_true", help="plot the result")
-    ep_parser.add_argument("-e", "--export", type=str, default=None, help="export to the provided filename")
+    ep_parser.add_argument("-x", "--export", type=str, default=None, help="export to the provided filename")
+    ep_parser.add_argument("-e", "--phi_eps", type=float, default=1e-12, help="epsilon criteria in finding phi")
     ep_parser.add_argument("-n", type=int, default=7, help="Number of encoding qubits")
     ep_parser.add_argument("-d", "--asin-degree", nargs="*", default=[5], type=int, help="degree(s) of the polynomial approximating arcsin")
 
@@ -646,6 +670,9 @@ if __name__ == "__main__":
     pp_parser.add_argument("coef", nargs='+', type=float, help="coefficients of the polynomial")
     pp_parser.add_argument("-d", "--asin-degree", type=int, default=7, help="degree(s) of the polynomial approximating arcsin")
     pp_parser.add_argument("-n", type=int, default=7, help="Number of encoding qubits")
+    pp_parser.add_argument("-e", "--phi-eps", type=float, default=1e-12, help="epsilon criteria in finding phi")
+    pp_parser.add_argument("-t", "--depth", action="store_true", help="compute the circuit depth on FakeTorino")
+    pp_parser.add_argument("-p", "--plot", action="store_true", help="plot the result")
 
 
     ns = parser.parse_args()
@@ -658,9 +685,9 @@ if __name__ == "__main__":
     elif ns.cmd == "asin":
         test_asin(ns.degree, ns.plot, ns.npts, ns.laurent)
     elif ns.cmd == "poly":
-        test_poly(ns.coef, ns.n, ns.asin_degree, ns.plot, ns.export)
+        test_poly(ns.coef, ns.n, ns.asin_degree, ns.plot, ns.phi_eps, ns.export)
     elif ns.cmd == "prepare":
-        test_prepare(ns.coef, ns.n, ns.asin_degree)
+        test_prepare(ns.coef, ns.n, ns.asin_degree, ns.phi_eps, ns.plot, ns.depth)
 
 
 
