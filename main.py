@@ -276,6 +276,12 @@ def success_inf(poly: Polynomial) -> float:
     return result
 
 
+def success_inf_sin(poly: Chebyshev) -> float:
+    """Computes the success probability of `poly ∘ sin` in the limit n -> inf"""
+    s = np.square(poly.coef)
+    return 0.5 * (np.sum(s) + s[0])
+
+
 def diffuser(n: int):
     ctrl = list(range(1, n+2))
     qc = QuantumCircuit(n + 2)
@@ -491,7 +497,7 @@ def test_poly(
         tc = transpile(qc, backend)
         sv = backend.run(tc).result().get_statevector().data
         suc = np.linalg.vector_norm(sv[:N])**2
-        suc_pred = 0.5 * np.sum(np.square(P.coef)) # type: ignore
+        suc_pred = success_inf_sin(P) # type: ignore
         print(f" • P[inf](T∘A∘sin): {suc_pred*100:8.5f}%")
         print(f" • P[{nqubits}](T∘A∘sin): {suc * 100:8.5f}%")
         P_n_TAsin.append(float(suc))
