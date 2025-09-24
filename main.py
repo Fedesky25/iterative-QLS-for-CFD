@@ -1,6 +1,8 @@
 from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit import Gate, ParameterExpression
+from qiskit.circuit.library.standard_gates import ZGate, GlobalPhaseGate
 from qiskit.compiler import transpile
+from qiskit.providers import Backend
 from qiskit_aer import AerSimulator, StatevectorSimulator
 
 from math import pi, sqrt, sin
@@ -295,52 +297,71 @@ def diffuser(n: int):
     return qc.to_gate(label="D")
 
 
-def prepare(nqubits: int, poly: Polynomial, Pmax: float = 1, asin_degree: int = 7):
-    """ Prepares the first `nqubits` in the state given by the polynomial
+class PreparationCircuit:
+    def __init__(self, nqubits: int, poly: Polynomial, asin_degree: int = 7):
+        """ Prepares the first `nqubits` in the state given by the polynomial
 
-    # Arguments
-    - `nqubits`: number of qubits
-    - `poly`: polynomial describing the imaginary part of the desired state
-    - `Pmax`: maximum absolute value of the polynomial in the domain [-1, +1] (default 1)
-    - `asin_degree`: degree of the polynomial approximating the arcsin
-    """
+        # Arguments
+        - `nqubits`: number of qubits
+        - `poly`: polynomial describing the imaginary part of the desired state
+        - `asin_degree`: degree of the polynomial approximating the arcsin
+        """
 
-    asin = AsinApprox(asin_degree)
-    P = asin.compose_poly(poly)
-    P = Chebyshev(poly2cheb(P.coef))
+        asin = AsinApprox(asin_degree)
+        H = asin.compose_poly(poly)
+        H = Chebyshev(poly2cheb(H.coef))
+        self.composed_poly = H
 
-    F = np.linalg.norm(P.coef) / Pmax
-    a = F * 2/3
-    k = int(np.ceil(np.pi/(4 * np.arcsin(a)) - 0.5))
-    omega = 2 * np.arccos(np.sin(np.pi / (4*k + 2) / a))
+        self.Pinf = success_inf_sin(H)
+        k = int(np.ceil(np.pi/(4 * np.arcsin(np.sqrt(self.Pinf))) - 0.5))
+        omega = 2 * np.arccos(np.sin(np.pi / (4*k + 2)) / np.sqrt(self.Pinf))
 
+        a = QuantumRegister(2, "a")
+        x = QuantumRegister(nqubits, "x")
+        qc = QuantumCircuit(x, a)
 
-    a = QuantumRegister(2, "a")
-    x = QuantumRegister(nqubits, "x")
-    qc = QuantumCircuit(x, a)
+        W = Wpoly(nqubits, H)
+        W_dag = reverse_gate(W)
+        W_qubits = [*x, a[0]]
 
-    D = diffuser(nqubits)
-    D_qubits = [*x, *a]
-
-    W = Wpoly(nqubits, P)
-    W_dag = reverse_gate(W)
-    W_qubits = [*x, a[0]]
-
-    qc.h(x)
-    for _ in range(k):
+        # state preparation
+        qc.h(x)
         qc.append(W, W_qubits)
         qc.ry(omega, a[1])
-        qc.x(a)
-        qc.cz(a[0], a[1])
-        qc.x(a)
-        qc.ry(-omega, a[1])
-        qc.append(W_dag, W_qubits)
-        qc.append(D, D_qubits)
-    qc.append(W, W_qubits)
 
-    backend = StatevectorSimulator()
-    tc = transpile(qc, backend)
-    return backend.run(tc).result().get_statevector().data
+        for _ in range(k):
+            # oracle
+            qc.x(a)
+            qc.cz(a[0], a[1])
+            qc.x(a)
+            # diffuser
+            qc.ry(-omega, a[1])
+            qc.append(W_dag, W_qubits)
+            qc.h(x)
+            qc.x(a[1])
+            qc.append(ZGate().control(nqubits + 1, ctrl_state=0), [*x, *a])
+            qc.x(a[1])
+            qc.h(x)
+            qc.append(W, W_qubits)
+            qc.ry(omega, a[1])
+
+        if bool(k & 1):
+            qc.append(GlobalPhaseGate(np.pi))
+
+        self.omega = omega
+        self.iterations = k
+        self.circuit = qc
+
+    def transpile(self, backend: Backend):
+        return transpile(self.circuit, backend)
+
+    def statevector(self):
+        backend = StatevectorSimulator()
+        tc = transpile(self.circuit, backend)
+        return backend.run(tc).result().get_statevector().data
+
+    def gate(self, label: str = "$U_T$"):
+        return self.circuit.to_gate(label=label)
 
 
 def convert_phi(phi: NDArray[np.float64]):
@@ -551,39 +572,39 @@ def test_poly(
             json.dump(data, f)
 
 
-def test_prepare(
-    coefficients: list[float],
-    nqubits: int = 5,
-    asin_degree: int = 7,
-    plot_real: bool = False,
-    plot_abs: bool = False,
-):
-    H = (1 << (nqubits + 1))
-    sv = prepare(nqubits, Polynomial(coefficients), asin_degree=asin_degree)
+def test_prepare(coefficients: list[float], nqubits: int = 7, asin_degree: int = 7):
+    M = 1 << (nqubits + 1)
+    N = M >> 1
+    H = N >> 1
+
+    P = Polynomial(coefficients)
+    circuit = PreparationCircuit(nqubits, P, asin_degree=asin_degree)
+    sv = circuit.statevector()
+    alpha = 1 / np.max(np.abs(sv))
+    fidelity = (np.linalg.norm(sv[0:N]) / np.linalg.norm(sv))**2;
+
+    print(f""" • Pinf: {circuit.Pinf*100:.3f}%
+ • Iterations: {circuit.iterations}
+ • omega: {circuit.omega:.5f} rad  ({circuit.omega/pi*180:.4f} deg)
+ • cos(omega/2): {np.cos(0.5 * circuit.omega)}
+ • Denormalization: {alpha:.3f}
+ • Fidelity: {fidelity*100:.3f}%""")
+
+    psi = [ np.empty(N, dtype=np.complex64) for _ in range(4) ]
+    for k in range(4):
+        psi[k][0:H] = alpha * sv[k*N+H : k*N+N]
+        psi[k][H:N] = alpha * sv[k*N : k*N+H]
+
     x = np.linspace(-1, 1, 1 << nqubits, endpoint=False)
-    psi00, psi01 = interpret_sv(sv[:H])
-    psi10, psi11 = interpret_sv(sv[H:])
 
-    fig, axs = plt.subplots(2, 2, figsize=(12, 6), sharex=True, sharey=True)
-    axs[0,0].set_xlim(-1, 1)
-    axs[0,0].set_ylim(-1, 1)
+    fig, axs = plt.subplots(1, 4, figsize=(12, 6), sharex=True, sharey=True)
+    axs[0].set_xlim(-1, 1)
+    axs[0].set_ylim(-1, 1)
+    axs[0].plot(x, P(x), c="black", ls="--")
 
-    axs[0,0].plot(x, np.imag(psi00))
-    axs[0,1].plot(x, np.imag(psi01))
-    axs[1,0].plot(x, np.imag(psi10))
-    axs[1,1].plot(x, np.imag(psi11))
-
-    if plot_real:
-        axs[0,0].plot(x, np.real(psi00), ls=":")
-        axs[0,1].plot(x, np.real(psi01), ls=":")
-        axs[1,0].plot(x, np.real(psi10), ls=":")
-        axs[1,1].plot(x, np.real(psi11), ls=":")
-
-    if plot_abs:
-        axs[0,0].plot(x, np.abs(psi00), ls="--")
-        axs[0,1].plot(x, np.abs(psi01), ls="--")
-        axs[1,0].plot(x, np.abs(psi10), ls="--")
-        axs[1,1].plot(x, np.abs(psi11), ls="--")
+    for k in range(4):
+        axs[k].plot(x, np.real(psi[k]))
+        axs[k].plot(x, np.imag(psi[k]), ls=":")
 
     plt.show()
 
@@ -623,8 +644,6 @@ if __name__ == "__main__":
     # prepare polynomial
     pp_parser = sub.add_parser("prepare", help="tests state preparation")
     pp_parser.add_argument("coef", nargs='+', type=float, help="coefficients of the polynomial")
-    pp_parser.add_argument("-r", "--real", action="store_true", help="plot the real part")
-    pp_parser.add_argument("-a", "--abs", action="store_true", help="plot the absolute value")
     pp_parser.add_argument("-d", "--asin-degree", type=int, default=7, help="degree(s) of the polynomial approximating arcsin")
     pp_parser.add_argument("-n", type=int, default=7, help="Number of encoding qubits")
 
@@ -641,7 +660,7 @@ if __name__ == "__main__":
     elif ns.cmd == "poly":
         test_poly(ns.coef, ns.n, ns.asin_degree, ns.plot, ns.export)
     elif ns.cmd == "prepare":
-        test_prepare(ns.coef, ns.n, ns.asin_degree, ns.real, ns.abs)
+        test_prepare(ns.coef, ns.n, ns.asin_degree)
 
 
 
